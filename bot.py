@@ -7,8 +7,10 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
+import requests
+import json
 
-# Load environment variables directly from .env.example
+# Load environment variables directly from .env.variables
 load_dotenv('.env.variables')
 
 # Configure logging
@@ -23,6 +25,15 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 SPREADSHEET_ID = os.getenv('GOOGLE_SHEET_ID')
 SHEET_NAME = 'Form Responses 1'  # Specific sheet name
 RANGE_NAME = f'{SHEET_NAME}!A:F'  # Using columns A through F
+
+# OpenRouter setup
+OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
+OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'anthropic/claude-3-opus-20240229')
+
+# Load prompt from prompt.txt
+LLM_PROMPT = open('prompt.txt', 'r').read()
+
 
 def get_google_sheets_service():
     """Initialize and return Google Sheets service."""
@@ -47,21 +58,46 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Example: 25.50 USD food groceries'
     )
 
-def process_message(message: str) -> tuple:
-    """Process the message and extract amount, currency, category, and description."""
+async def process_with_openrouter(message: str) -> tuple:
+    """Process message using OpenRouter API and return formatted data."""
     try:
-        parts = message.split()
-        if len(parts) < 3:
-            return None, "Message format: amount currency category [description]"
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",  # Replace with your actual repo URL
+        }
         
+        prompt = LLM_PROMPT + "\n\nDescription of expense is: " + message
+        data = {
+            "model": OPENROUTER_LLM_VERSION,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ]
+        }
+        
+        response = requests.post(OPENROUTER_URL, headers=headers, json=data)
+        response.raise_for_status()
+        
+        # Extract the formatted response
+        formatted_text = response.json()['choices'][0]['message']['content'].strip()
+        
+        # Parse the formatted response
+        parts = formatted_text.split(',')
+        if len(parts) != 4:
+            return None, "Failed to parse OpenRouter response"
+            
         amount = float(parts[0])
         currency = parts[1].upper()
         category = parts[2]
-        description = ' '.join(parts[3:]) if len(parts) > 3 else ''
+        description = parts[3]
         
         return (amount, currency, category, description), None
-    except ValueError:
-        return None, "Amount must be a number"
+        
+    except Exception as e:
+        return None, f"Error processing with OpenRouter: {str(e)}"
 
 async def save_to_sheets(amount: float, currency: str, category: str, description: str):
     """Save the expense to Google Sheets."""
@@ -102,7 +138,9 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
-    processed_data, error = process_message(message)
+    
+    # Process message with OpenRouter
+    processed_data, error = await process_with_openrouter(message)
     
     if error:
         await update.message.reply_text(error)

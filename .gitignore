@@ -1,6 +1,7 @@
 # Environment variables and credentials
 .env.variables
 credentials.json
+prompt.txt
 
 # Python
 __pycache__/
