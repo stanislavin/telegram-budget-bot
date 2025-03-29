@@ -10,8 +10,8 @@ from google.oauth2.credentials import Credentials
 import requests
 import json
 
-# Load environment variables directly from .env.variables
-load_dotenv('.env.variables')
+# Load environment variables directly from .env
+load_dotenv('.env')
 
 # Configure logging
 logging.basicConfig(
