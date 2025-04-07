@@ -139,6 +139,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
     
+    # Check if message is "ping"
+    if message.lower() == "ping":
+        await update.message.reply_text("pong 🏓")
+        return
+    
     # Process message with OpenRouter
     processed_data, error = await process_with_openrouter(message)
     
