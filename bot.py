@@ -144,24 +144,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("pong 🏓")
         return
     
+    # Send initial message and store it for updates
+    status_message = await update.message.reply_text("🔄 Processing your expense...")
+    
     # Process message with OpenRouter
+    await status_message.edit_text("🤖 Analyzing your expense with AI...")
     processed_data, error = await process_with_openrouter(message)
     
     if error:
-        await update.message.reply_text(error)
+        await status_message.edit_text(f"❌ Error: {error}")
         return
     
     amount, currency, category, description = processed_data
+    
+    # Update message before saving to sheets
+    await status_message.edit_text(f"📊 Saving to spreadsheet: {amount} {currency} - {category} - {description}")
+    
     success, error = await save_to_sheets(amount, currency, category, description)
     
     if success:
-        await update.message.reply_text(
-            f'✅ Saved: {amount} {currency} - {category} - {description}'
-        )
+        await status_message.edit_text(f"✅ Saved: {amount} {currency} - {category} - {description}")
     else:
-        await update.message.reply_text(
-            f'❌ Error saving to spreadsheet: {error}'
-        )
+        await status_message.edit_text(f"❌ Error saving to spreadsheet: {error}")
 
 def main():
     """Start the bot."""
