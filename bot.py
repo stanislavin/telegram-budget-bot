@@ -10,6 +10,7 @@ from google.oauth2.credentials import Credentials
 import requests
 from flask import Flask
 from threading import Thread
+import re
 
 # Load environment variables directly from .env
 load_dotenv('.env')
@@ -30,6 +31,17 @@ def health_check():
 
 def run_flask():
     app.run(host='0.0.0.0', port=8000)
+
+# Load prompt and extract categories
+def load_categories():
+    with open('prompt.txt', 'r') as f:
+        prompt = f.read()
+    # Extract categories from the prompt using regex
+    category_pattern = r'- ([a-zA-Z]+) \(.*?\)'
+    categories = re.findall(category_pattern, prompt)
+    return categories
+
+CATEGORIES = load_categories()
 
 # Google Sheets setup
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -183,8 +195,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create confirmation buttons
     keyboard = [
         [
-            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{expense_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{expense_id}")
+            InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+        ],
+        [
+            InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -197,12 +212,44 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
+async def show_category_buttons(expense_id: str, current_category: str):
+    """Show category selection buttons."""
+    # Create a row of buttons for each category
+    keyboard = []
+    row = []
+    for i, category in enumerate(CATEGORIES):
+        if category == current_category:
+            row.append(InlineKeyboardButton(f"✅ {category}", callback_data=f"action:select_category|id:{expense_id}|category:{category}"))
+        else:
+            row.append(InlineKeyboardButton(category, callback_data=f"action:select_category|id:{expense_id}|category:{category}"))
+        
+        # Add 3 categories per row
+        if len(row) == 3 or i == len(CATEGORIES) - 1:
+            keyboard.append(row)
+            row = []
+    
+    # Add back button
+    keyboard.append([InlineKeyboardButton("⬅️ Back", callback_data=f"action:back|id:{expense_id}")])
+    
+    return InlineKeyboardMarkup(keyboard)
+
+def parse_callback_data(data: str) -> dict:
+    """Parse callback data into a dictionary."""
+    result = {}
+    for part in data.split('|'):
+        if ':' in part:
+            key, value = part.split(':', 1)
+            result[key] = value
+    return result
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks."""
     query = update.callback_query
     await query.answer()
     
-    action, expense_id = query.data.split('_')
+    data = parse_callback_data(query.data)
+    action = data.get('action')
+    expense_id = data.get('id')
     expense_data = pending_expenses.get(expense_id)
     
     if not expense_data:
@@ -225,13 +272,72 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.edit_message_text(f"❌ Error saving to spreadsheet: {error}")
+        
+        # Clean up
+        if expense_id in pending_expenses:
+            del pending_expenses[expense_id]
     
     elif action == 'cancel':
         await query.edit_message_text("❌ Expense cancelled.")
+        if expense_id in pending_expenses:
+            del pending_expenses[expense_id]
     
-    # Clean up
-    if expense_id in pending_expenses:
-        del pending_expenses[expense_id]
+    elif action == 'change_category':
+        # Show category selection buttons
+        reply_markup = await show_category_buttons(expense_id, expense_data['category'])
+        await query.edit_message_text(
+            f"📊 Select a new category for:\n"
+            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+            f"Current category: {expense_data['category']}\n"
+            f"Description: {expense_data['description']}",
+            reply_markup=reply_markup
+        )
+    
+    elif action == 'select_category':
+        # Update the category
+        new_category = data.get('category')
+        expense_data['category'] = new_category
+        
+        # Show the main confirmation buttons again
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+            ],
+            [
+                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"📊 Please confirm the expense:\n"
+            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+            f"Category: {expense_data['category']}\n"
+            f"Description: {expense_data['description']}",
+            reply_markup=reply_markup
+        )
+    
+    elif action == 'back':
+        # Show the main confirmation buttons again
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+            ],
+            [
+                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"📊 Please confirm the expense:\n"
+            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+            f"Category: {expense_data['category']}\n"
+            f"Description: {expense_data['description']}",
+            reply_markup=reply_markup
+        )
 
 def main():
     """Start the bot."""
