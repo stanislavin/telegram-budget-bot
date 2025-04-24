@@ -2,8 +2,8 @@ import os
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
@@ -45,6 +45,8 @@ OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'anthropic/claude-3
 # Load prompt from prompt.txt
 LLM_PROMPT = open('prompt.txt', 'r').read()
 
+# Store pending expenses
+pending_expenses = {}
 
 def get_google_sheets_service():
     """Initialize and return Google Sheets service."""
@@ -75,7 +77,7 @@ async def process_with_openrouter(message: str) -> tuple:
         headers = {
             "Authorization": f"Bearer {OPENROUTER_API_KEY}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",  # Replace with your actual repo URL
+            "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",
         }
         
         prompt = LLM_PROMPT + "\n\nDescription of expense is: " + message
@@ -168,15 +170,68 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     amount, currency, category, description = processed_data
     
-    # Update message before saving to sheets
-    await status_message.edit_text(f"📊 Saving to spreadsheet: {amount} {currency} - {category} - {description}")
+    # Store the expense data for confirmation
+    expense_id = f"{update.message.chat_id}-{update.message.message_id}"
+    pending_expenses[expense_id] = {
+        'amount': amount,
+        'currency': currency,
+        'category': category,
+        'description': description,
+        'status_message': status_message
+    }
     
-    success, error = await save_to_sheets(amount, currency, category, description)
+    # Create confirmation buttons
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data=f"confirm_{expense_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"cancel_{expense_id}")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     
-    if success:
-        await status_message.edit_text(f"✅ Saved: {amount} {currency} - {category} - {description}")
-    else:
-        await status_message.edit_text(f"❌ Error saving to spreadsheet: {error}")
+    await status_message.edit_text(
+        f"📊 Please confirm the expense:\n"
+        f"Amount: {amount} {currency}\n"
+        f"Category: {category}\n"
+        f"Description: {description}",
+        reply_markup=reply_markup
+    )
+
+async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button callbacks."""
+    query = update.callback_query
+    await query.answer()
+    
+    action, expense_id = query.data.split('_')
+    expense_data = pending_expenses.get(expense_id)
+    
+    if not expense_data:
+        await query.edit_message_text("❌ This expense has expired or was already processed.")
+        return
+    
+    if action == 'confirm':
+        await query.edit_message_text("💾 Saving to spreadsheet...")
+        success, error = await save_to_sheets(
+            expense_data['amount'],
+            expense_data['currency'],
+            expense_data['category'],
+            expense_data['description']
+        )
+        
+        if success:
+            await query.edit_message_text(
+                f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+                f"{expense_data['category']} - {expense_data['description']}"
+            )
+        else:
+            await query.edit_message_text(f"❌ Error saving to spreadsheet: {error}")
+    
+    elif action == 'cancel':
+        await query.edit_message_text("❌ Expense cancelled.")
+    
+    # Clean up
+    if expense_id in pending_expenses:
+        del pending_expenses[expense_id]
 
 def main():
     """Start the bot."""
@@ -192,6 +247,7 @@ def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CallbackQueryHandler(button_callback))
 
     # Start the Bot
     application.run_polling(allowed_updates=Update.ALL_TYPES)
