@@ -9,6 +9,12 @@ from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 import requests
 import json
+import sys
+
+# Load environment variables and check if .env file exists
+if not os.path.exists('.env'):
+    print("Error: .env file not found. Please create a .env file with the required environment variables.")
+    sys.exit(1)
 
 # Load environment variables directly from .env
 load_dotenv('.env')
