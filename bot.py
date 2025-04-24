@@ -8,8 +8,8 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from google.oauth2.credentials import Credentials
 import requests
-import json
-import sys
+from flask import Flask
+from threading import Thread
 
 # Load environment variables directly from .env
 load_dotenv('.env')
@@ -20,6 +20,16 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Create Flask app for health check
+app = Flask(__name__)
+
+@app.route('/health')
+def health_check():
+    return 'OK', 200
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8000)
 
 # Google Sheets setup
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
@@ -170,6 +180,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     """Start the bot."""
+    # Start Flask in a separate thread (for health check)
+    flask_thread = Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+
     # Create the Application and pass it your bot's token
     application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
 
