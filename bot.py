@@ -11,6 +11,7 @@ import requests
 from flask import Flask
 from threading import Thread
 import re
+import time
 
 # Load environment variables directly from .env
 load_dotenv('.env')
@@ -36,6 +37,23 @@ def nudge():
 
 def run_flask():
     app.run(host='0.0.0.0', port=8000)
+
+def run_nudge_pinger():
+    """Run the nudge pinger in a separate thread."""
+    service_url = os.getenv('SERVICE_URL', 'http://0.0.0.0:8000')
+    nudge_url = f"{service_url}/nudge"
+    logger.info(f"Starting nudge pinger for {nudge_url}...")
+    
+    while True:
+        try:
+            response = requests.get(nudge_url)
+            if response.status_code == 200:
+                logger.info(f"Successfully pinged {nudge_url}")
+            else:
+                logger.error(f"Failed to ping {nudge_url}: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error pinging {nudge_url}: {str(e)}")
+        time.sleep(60)  # Sleep for 1 minute
 
 # Load prompt and extract categories
 def load_categories():
@@ -350,6 +368,11 @@ def main():
     flask_thread = Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
+
+    # Start nudge pinger in a separate thread
+    nudge_thread = Thread(target=run_nudge_pinger)
+    nudge_thread.daemon = True
+    nudge_thread.start()
 
     # Create the Application and pass it your bot's token
     application = Application.builder().token(os.getenv('TELEGRAM_BOT_TOKEN')).build()
