@@ -29,6 +29,11 @@ app = Flask(__name__)
 def health_check():
     return 'OK', 200
 
+@app.route('/nudge')
+def nudge():
+    """Endpoint to keep the service alive."""
+    return 'OK', 200
+
 def run_flask():
     app.run(host='0.0.0.0', port=8000)
 
