@@ -83,12 +83,19 @@ LLM_PROMPT = open('prompt.txt', 'r').read()
 # Store pending expenses
 pending_expenses = {}
 
+# Get credentials path from environment variable
+CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials.json')
+
 def get_google_sheets_service():
     """Initialize and return Google Sheets service."""
-    creds = service_account.Credentials.from_service_account_file(
-        'credentials.json', scopes=SCOPES)
-    service = build('sheets', 'v4', credentials=creds)
-    return service
+    try:
+        creds = service_account.Credentials.from_service_account_file(
+            CREDENTIALS_PATH, scopes=SCOPES)
+        service = build('sheets', 'v4', credentials=creds)
+        return service
+    except Exception as e:
+        logger.error(f"Failed to initialize Google Sheets service: {str(e)}")
+        raise
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
