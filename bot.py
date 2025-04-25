@@ -308,7 +308,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del pending_expenses[expense_id]
     
     elif action == 'cancel':
-        await query.edit_message_text("❌ Expense cancelled.")
+        await query.edit_message_text("Expense cancelled.")
         if expense_id in pending_expenses:
             del pending_expenses[expense_id]
     
