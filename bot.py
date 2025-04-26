@@ -12,6 +12,7 @@ from flask import Flask
 from threading import Thread
 import re
 import time
+import asyncio
 
 # Load environment variables directly from .env
 load_dotenv('.env')
@@ -190,6 +191,38 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
     except Exception as e:
         return False, str(e)
 
+async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
+    """Automatically confirm an expense after 10 seconds if no user action."""
+    await asyncio.sleep(10)  # Wait for 10 seconds
+    
+    # Check if expense still exists (not confirmed or cancelled)
+    expense_data = pending_expenses.get(expense_id)
+    if not expense_data:
+        return
+    
+    # Get the status message
+    status_message = expense_data['status_message']
+    
+    # Save to sheets
+    success, error = await save_to_sheets(
+        expense_data['amount'],
+        expense_data['currency'],
+        expense_data['category'],
+        expense_data['description']
+    )
+    
+    if success:
+        await status_message.edit_text(
+            f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
+            f"{expense_data['category']} - {expense_data['description']}"
+        )
+    else:
+        await status_message.edit_text(f"❌ Error auto-saving to spreadsheet: {error}")
+    
+    # Clean up
+    if expense_id in pending_expenses:
+        del pending_expenses[expense_id]
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
@@ -235,12 +268,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await status_message.edit_text(
-        f"📊 Please confirm the expense:\n"
+        f"📊 Please confirm the expense (auto-confirms in 10s):\n"
         f"Amount: {amount} {currency}\n"
         f"Category: {category}\n"
         f"Description: {description}",
         reply_markup=reply_markup
     )
+    
+    # Start auto-confirmation timer
+    asyncio.create_task(auto_confirm_expense(expense_id, context))
 
 async def show_category_buttons(expense_id: str, current_category: str):
     """Show category selection buttons."""
