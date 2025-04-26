@@ -41,3 +41,60 @@ The bot can be configured through the following environment variables:
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token
 - `GOOGLE_SHEET_ID`: ID of your Google Sheet
 - `MESSAGE_FORMAT`: Format of messages to process (default: "expense amount category")
+
+```mermaid
+graph TD
+    subgraph Telegram Bot
+        TB[Telegram Bot] -->|User Message| HM[Handle Message]
+        HM -->|Process| OR[OpenRouter API]
+        OR -->|Structured Data| HM
+        HM -->|Store| PE[Pending Expenses]
+        HM -->|Show| UI[User Interface]
+        UI -->|User Action| BC[Button Callback]
+        BC -->|Confirm| GS[Google Sheets]
+        BC -->|Change Category| UI
+    end
+
+    subgraph Health Monitoring
+        Flask[Flask Server] -->|/health| HealthCheck
+        Flask -->|/nudge| Nudge
+        NP[Nudge Pinger] -->|Every 60s| Nudge
+    end
+
+    subgraph Data Storage
+        GS[Google Sheets] -->|Store| Data[(Expense Data)]
+    end
+
+    subgraph Environment
+        ENV[.env] -->|Config| TB
+        ENV -->|Config| GS
+        ENV -->|Config| OR
+    end
+
+    style TB fill:#f9f,stroke:#333,stroke-width:2px
+    style Flask fill:#bbf,stroke:#333,stroke-width:2px
+    style GS fill:#bfb,stroke:#333,stroke-width:2px
+    style ENV fill:#fbb,stroke:#333,stroke-width:2px
+```
+
+This diagram illustrates the main components of the Telegram Budget Bot:
+
+1. **Telegram Bot Core**
+   - Handles user messages and interactions
+   - Uses OpenRouter API for expense processing
+   - Manages pending expenses
+   - Provides interactive UI with buttons
+
+2. **Health Monitoring**
+   - Flask server for health checks
+   - Nudge pinger to keep the service alive
+   - Runs in a separate thread
+
+3. **Data Storage**
+   - Google Sheets integration
+   - Stores expense data with timestamps
+
+4. **Environment Configuration**
+   - Uses .env file for configuration
+   - Manages API keys and credentials
+   - Configures all major components
