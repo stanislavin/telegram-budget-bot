@@ -2,7 +2,7 @@ import os
 import logging
 from datetime import datetime
 from dotenv import load_dotenv
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
@@ -98,12 +98,22 @@ def get_google_sheets_service():
         logger.error(f"Failed to initialize Google Sheets service: {str(e)}")
         raise
 
+def get_command_keyboard():
+    """Create a custom keyboard with command buttons."""
+    keyboard = [
+        [KeyboardButton("💰 Add Expense")],
+        [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
+        [KeyboardButton("🏓 Ping")]
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     await update.message.reply_text(
         'Hi! I\'m your budget tracking bot. Send me messages in the format:\n'
         'amount currency category description\n'
-        'Example: 25.50 USD food groceries'
+        'Example: 25.50 USD food groceries',
+        reply_markup=get_command_keyboard()
     )
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +121,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         'Send me messages in the format:\n'
         'amount currency category description\n'
-        'Example: 25.50 USD food groceries'
+        'Example: 25.50 USD food groceries\n\n'
+        'Or use the buttons below to interact with me!',
+        reply_markup=get_command_keyboard()
     )
 
 async def process_with_openrouter(message: str) -> tuple:
@@ -227,11 +239,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
     
-    # Check if message is "ping"
-    if message.lower() == "ping":
+    # Handle command keyboard buttons
+    if message == "💰 Add Expense":
+        await update.message.reply_text(
+            "Please send your expense in the format:\n"
+            "amount currency category description\n"
+            "Example: 25.50 USD food groceries"
+        )
+        return
+    elif message == "📊 View Categories":
+        categories_text = "Available categories:\n" + "\n".join(f"- {cat}" for cat in CATEGORIES)
+        await update.message.reply_text(categories_text)
+        return
+    elif message == "❓ Help":
+        await help_command(update, context)
+        return
+    elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
         return
     
+    # Process regular expense messages
     # Send initial message and store it for updates
     status_message = await update.message.reply_text("🔄 Processing your expense...")
     
