@@ -269,7 +269,7 @@ async def get_recent_expenses(days: int = 2):
                 try:
                     # Parse the timestamp from the sheet
                     timestamp_str = row[0]  # Column A
-                    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    timestamp = datetime.strptime(timestamp_str, "%m-%d-%Y %H:%M:%S")
                     
                     # Check if the expense is within the date range
                     if timestamp.date() >= start_date.date():
