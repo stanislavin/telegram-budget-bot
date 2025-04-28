@@ -247,6 +247,7 @@ async def get_recent_expenses(days: int = 2):
         
         # Format dates for comparison
         start_date_str = start_date.strftime("%Y-%m-%d")
+        logger.info(f"Fetching expenses from {start_date_str} to {end_date.strftime('%Y-%m-%d')}")
         
         # Get all data from the sheet
         result = sheet.values().get(
@@ -261,19 +262,27 @@ async def get_recent_expenses(days: int = 2):
         # Filter and format expenses
         recent_expenses = []
         total_amount = 0
+        currency = None
         
         for row in values[1:]:  # Skip header row
             if len(row) >= 6:  # Ensure row has all required columns
-                timestamp = row[0]  # Column A
-                amount = float(row[1])  # Column B
-                category = row[2]  # Column C
-                description = row[3]  # Column D
-                currency = row[5]  # Column F
-                
-                # Check if the expense is within the date range
-                if timestamp >= start_date_str:
-                    recent_expenses.append(f"• {amount} {currency} - {category} - {description}")
-                    total_amount += amount
+                try:
+                    # Parse the timestamp from the sheet
+                    timestamp_str = row[0]  # Column A
+                    timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+                    
+                    # Check if the expense is within the date range
+                    if timestamp.date() >= start_date.date():
+                        amount = float(row[1])  # Column B
+                        category = row[2]  # Column C
+                        description = row[3]  # Column D
+                        currency = row[5]  # Column F
+                        
+                        recent_expenses.append(f"• {amount} {currency} - {category} - {description}")
+                        total_amount += amount
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing row: {row}, error: {str(e)}")
+                    continue
         
         if not recent_expenses:
             return f"No expenses found for the last {days} days."
@@ -281,7 +290,8 @@ async def get_recent_expenses(days: int = 2):
         # Format the message
         message = f"📅 Expenses for the last {days} days:\n\n"
         message += "\n".join(recent_expenses)
-        message += f"\n\n💰 Total: {total_amount:.2f} {currency}"
+        if currency:
+            message += f"\n\n💰 Total: {total_amount:.2f} {currency}"
         
         return message
         
