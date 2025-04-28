@@ -241,13 +241,12 @@ async def get_recent_expenses(days: int = 2):
         service = get_google_sheets_service()
         sheet = service.spreadsheets()
         
-        # Get current date and date N days ago
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=days)
+        # Get today's date and N-1 days before
+        today = datetime.now().date()
+        start_date = today - timedelta(days=days-1)
         
         # Format dates for comparison
-        start_date_str = start_date.strftime("%Y-%m-%d")
-        logger.info(f"Fetching expenses from {start_date_str} to {end_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Fetching expenses from {start_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
         
         # Get all data from the sheet
         result = sheet.values().get(
@@ -269,16 +268,25 @@ async def get_recent_expenses(days: int = 2):
                 try:
                     # Parse the timestamp from the sheet
                     timestamp_str = row[0]  # Column A
-                    timestamp = datetime.strptime(timestamp_str, "%m-%d-%Y %H:%M:%S")
+                    timestamp = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
                     
                     # Check if the expense is within the date range
-                    if timestamp.date() >= start_date.date():
+                    if start_date <= timestamp.date() <= today:
                         amount = float(row[1])  # Column B
-                        category = row[2]  # Column C
                         description = row[3]  # Column D
                         currency = row[5]  # Column F
                         
-                        recent_expenses.append(f"• {amount} {currency} - {category} - {description}")
+                        # Format date and amount
+                        formatted_date = timestamp.strftime("%d/%m")
+                        whole_amount = int(amount)
+                        
+                        # Create a simple line
+                        line = f"{formatted_date} {whole_amount}{currency} {description}"
+                        # Truncate line if longer than 36 characters
+                        # (figured out by trial and error)
+                        if len(line) > 36:
+                            line = line[:33] + "..."
+                        recent_expenses.append(line)
                         total_amount += amount
                 except (ValueError, IndexError) as e:
                     logger.error(f"Error parsing row: {row}, error: {str(e)}")
@@ -288,10 +296,8 @@ async def get_recent_expenses(days: int = 2):
             return f"No expenses found for the last {days} days."
         
         # Format the message
-        message = f"📅 Expenses for the last {days} days:\n\n"
+        message = f"Expenses for the last {days} days:\n\n"
         message += "\n".join(recent_expenses)
-        if currency:
-            message += f"\n\n💰 Total: {total_amount:.2f} {currency}"
         
         return message
         
