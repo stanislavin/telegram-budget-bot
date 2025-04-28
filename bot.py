@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
@@ -103,7 +103,7 @@ def get_command_keyboard():
     keyboard = [
         [KeyboardButton("💰 Add Expense")],
         [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
-        [KeyboardButton("🏓 Ping")]
+        [KeyboardButton("📅 Recent Expenses"), KeyboardButton("🏓 Ping")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -235,6 +235,60 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
     if expense_id in pending_expenses:
         del pending_expenses[expense_id]
 
+async def get_recent_expenses(days: int = 2):
+    """Fetch expenses from the last N days from Google Sheets."""
+    try:
+        service = get_google_sheets_service()
+        sheet = service.spreadsheets()
+        
+        # Get current date and date N days ago
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=days)
+        
+        # Format dates for comparison
+        start_date_str = start_date.strftime("%Y-%m-%d")
+        
+        # Get all data from the sheet
+        result = sheet.values().get(
+            spreadsheetId=SPREADSHEET_ID,
+            range=RANGE_NAME
+        ).execute()
+        
+        values = result.get('values', [])
+        if not values:
+            return "No expenses found."
+        
+        # Filter and format expenses
+        recent_expenses = []
+        total_amount = 0
+        
+        for row in values[1:]:  # Skip header row
+            if len(row) >= 6:  # Ensure row has all required columns
+                timestamp = row[0]  # Column A
+                amount = float(row[1])  # Column B
+                category = row[2]  # Column C
+                description = row[3]  # Column D
+                currency = row[5]  # Column F
+                
+                # Check if the expense is within the date range
+                if timestamp >= start_date_str:
+                    recent_expenses.append(f"• {amount} {currency} - {category} - {description}")
+                    total_amount += amount
+        
+        if not recent_expenses:
+            return f"No expenses found for the last {days} days."
+        
+        # Format the message
+        message = f"📅 Expenses for the last {days} days:\n\n"
+        message += "\n".join(recent_expenses)
+        message += f"\n\n💰 Total: {total_amount:.2f} {currency}"
+        
+        return message
+        
+    except Exception as e:
+        logger.error(f"Error fetching recent expenses: {str(e)}")
+        return f"Error fetching expenses: {str(e)}"
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
@@ -253,6 +307,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif message == "❓ Help":
         await help_command(update, context)
+        return
+    elif message == "📅 Recent Expenses":
+        await update.message.reply_text("🔄 Fetching recent expenses...")
+        expenses_text = await get_recent_expenses()
+        await update.message.reply_text(expenses_text)
         return
     elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
