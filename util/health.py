@@ -1,5 +1,7 @@
 import logging
 import requests
+import asyncio
+import time
 from flask import Flask
 from threading import Thread
 
@@ -29,16 +31,24 @@ def start_health_check():
     flask_thread.start()
     logger.info("Health check server started")
 
-def nudge_service():
-    """Ping the service endpoint to keep it alive."""
+def nudge_pinger():
+    """Run the nudge pinger in a separate thread."""
     nudge_url = f"{SERVICE_URL}/nudge"
-    logger.info(f"Pinging {nudge_url}...")
+    logger.info(f"Starting nudge pinger for {nudge_url}...")
     
-    try:
-        response = requests.get(nudge_url)
-        if response.status_code == 200:
-            logger.info(f"Successfully pinged {nudge_url}")
-        else:
-            logger.error(f"Failed to ping {nudge_url}: {response.status_code}")
-    except Exception as e:
-        logger.error(f"Error pinging {nudge_url}: {str(e)}") 
+    while True:
+        try:
+            response = requests.get(nudge_url)
+            if response.status_code == 200:
+                logger.info(f"Successfully pinged {nudge_url}")
+            else:
+                logger.error(f"Failed to ping {nudge_url}: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Error pinging {nudge_url}: {str(e)}")
+        time.sleep(60)  # Sleep for 1 minute
+
+def start_nudge():
+    """Run nudge pinger in a separate thread."""
+    nudge_thread = Thread(target=nudge_pinger)
+    nudge_thread.daemon = True
+    nudge_thread.start() 

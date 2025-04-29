@@ -296,7 +296,7 @@ def create_application():
     
     return application 
 
-def telegram_start_polling():
+def start_telegram_polling():
     """Create application and start polling."""
     application = create_application()
     application.run_polling(allowed_updates=Update.ALL_TYPES)
