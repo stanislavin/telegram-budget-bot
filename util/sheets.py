@@ -105,7 +105,7 @@ async def get_recent_expenses(days: int = 2):
                         # Truncate line if longer than 36 characters
                         if len(line) > 36:
                             line = line[:33] + "..."
-                        recent_expenses.append(line)
+                        recent_expenses.append((timestamp, line))
                         total_amount += amount
                 except (ValueError, IndexError) as e:
                     logger.error(f"Error parsing row: {row}, error: {str(e)}")
@@ -114,9 +114,12 @@ async def get_recent_expenses(days: int = 2):
         if not recent_expenses:
             return f"No expenses found for the last {days} days."
         
+        # Sort expenses by date in ascending order (oldest first)
+        recent_expenses.sort(key=lambda x: x[0])
+        
         # Format the message
         message = f"Expenses for the last {days} days:\n\n"
-        message += "\n".join(recent_expenses)
+        message += "\n".join(line for _, line in recent_expenses)
         
         return message
         
