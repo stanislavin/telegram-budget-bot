@@ -1,6 +1,5 @@
 import logging
 import requests
-import asyncio
 import time
 from flask import Flask
 from threading import Thread
@@ -32,23 +31,54 @@ def start_health_check():
     logger.info("Health check server started")
 
 def nudge_pinger():
-    """Run the nudge pinger in a separate thread."""
+    """Run the nudge pinger with proper error handling and timeout."""
     nudge_url = f"{SERVICE_URL}/nudge"
     logger.info(f"Starting nudge pinger for {nudge_url}...")
     
+    consecutive_failures = 0
+    max_consecutive_failures = 3
+    
     while True:
         try:
-            response = requests.get(nudge_url)
+            # Add timeout to prevent hanging
+            response = requests.get(nudge_url, timeout=10)
             if response.status_code == 200:
                 logger.info(f"Successfully pinged {nudge_url}")
+                consecutive_failures = 0  # Reset failure counter on success
             else:
                 logger.error(f"Failed to ping {nudge_url}: {response.status_code}")
+                consecutive_failures += 1
+        except Timeout:
+            logger.error(f"Timeout while pinging {nudge_url}")
+            consecutive_failures += 1
+        except RequestException as e:
+            logger.error(f"Request error pinging {nudge_url}: {str(e)}")
+            consecutive_failures += 1
         except Exception as e:
-            logger.error(f"Error pinging {nudge_url}: {str(e)}")
+            logger.error(f"Unexpected error pinging {nudge_url}: {str(e)}")
+            consecutive_failures += 1
+        
+        # If we have too many consecutive failures, log a warning
+        if consecutive_failures >= max_consecutive_failures:
+            logger.warning(f"Multiple consecutive failures ({consecutive_failures}) pinging {nudge_url}")
+        
         time.sleep(60)  # Sleep for 1 minute
 
 def start_nudge():
-    """Run nudge pinger in a separate thread."""
-    nudge_thread = Thread(target=nudge_pinger)
-    nudge_thread.daemon = True
-    nudge_thread.start() 
+    """Run nudge pinger in a separate thread with monitoring and restart capability."""
+    def monitor_and_restart():
+        while True:
+            nudge_thread = Thread(target=nudge_pinger)
+            nudge_thread.daemon = True
+            nudge_thread.start()
+            
+            # Wait for the thread to complete (it shouldn't unless there's an error)
+            nudge_thread.join()
+            
+            logger.warning("Nudge pinger thread died, restarting...")
+            time.sleep(5)  # Wait a bit before restarting
+    
+    monitor_thread = Thread(target=monitor_and_restart)
+    monitor_thread.daemon = True
+    monitor_thread.start()
+    logger.info("Nudge pinger monitor started") 
