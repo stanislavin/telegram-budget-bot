@@ -20,6 +20,7 @@ Your task is to:
    - whatever (e.g., miscellaneous personal spending)
    - work (e.g., work-related expenses)
    - education (e.g., courses, books, tuition)
+   - bonus (this is a special category and can only be specified within the description)
    - extra (use only if the expense does not fit any other category)
 3. Identify the amount spent from the description.
 4. Determine the currency (RSD, EUR, RUB), defaulting to RSD if unspecified or ambiguous.
