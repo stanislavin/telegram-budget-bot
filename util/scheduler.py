@@ -23,24 +23,24 @@ class DailySummaryScheduler:
             summary_text = await get_daily_summary()
             await context.bot.send_message(
                 chat_id=self.chat_id,
-                text=f"🕐 Daily Summary (20:00):\n\n{summary_text}"
+                text=f"🕐 Daily Summary (17:00):\n\n{summary_text}"
             )
             logger.info(f"Daily summary sent to chat {self.chat_id}")
         except Exception as e:
             logger.error(f"Failed to send daily summary to chat {self.chat_id}: {str(e)}")
     
     async def schedule_loop(self, context: ContextTypes.DEFAULT_TYPE):
-        """Main scheduling loop that runs daily at 20:00."""
+        """Main scheduling loop that runs daily at 17:00."""
         while self.is_running:
             try:
                 # Get current time in the specified timezone
                 now = datetime.now(self.timezone)
-                target_time = time(20, 0)  # 20:00
+                target_time = time(17, 0)  # 17:00
                 
-                # Calculate next 20:00
-                next_run = now.replace(hour=20, minute=0, second=0, microsecond=0)
+                # Calculate next 17:00
+                next_run = now.replace(hour=17, minute=0, second=0, microsecond=0)
                 
-                # If we've already passed 20:00 today, schedule for tomorrow
+                # If we've already passed 17:00 today, schedule for tomorrow
                 if now.time() >= target_time:
                     next_run = next_run.replace(day=next_run.day + 1)
                 

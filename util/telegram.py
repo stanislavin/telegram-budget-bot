@@ -45,7 +45,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Hi! I\'m your budget tracking bot. Send me messages in the format:\n'
         'amount currency category description\n'
         'Example: 25.50 USD food groceries\n\n'
-        '🕐 I\'ll also send you a daily spending summary every day at 20:00 UTC.',
+        '🕐 I\'ll also send you a daily spending summary every day at 17:00 UTC.',
         reply_markup=get_command_keyboard()
     )
 
