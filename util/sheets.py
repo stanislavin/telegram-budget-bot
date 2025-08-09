@@ -60,21 +60,34 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
 def generate_pie_chart(category_totals, currency, date_str):
     """Generate a pie chart for category spending and save as an image."""
     # Create figure and axis
-    fig, ax = plt.subplots(figsize=(8, 6))
+    fig, ax = plt.subplots(figsize=(10, 8))
     
     # Sort categories by amount (descending)
     sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
     labels = [item[0] for item in sorted_categories]
     sizes = [item[1] for item in sorted_categories]
     
-    # Create pie chart
-    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+    # Create custom labels with both amount and percentage
+    total = sum(sizes)
+    custom_labels = [f'{label}\n{size:.2f} {currency}\n({size/total*100:.1f}%)' 
+                     for label, size in zip(labels, sizes)]
+    
+    # Create pie chart with custom labels
+    wedges, _, autotexts = ax.pie(sizes, labels=custom_labels, autopct='', startangle=90)
+    
+    # Format the appearance
     ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-    ax.set_title(f'Daily Spending by Category - {date_str}')
+    ax.set_title(f'Daily Spending by Category - {date_str}', fontsize=16, pad=20)
+    
+    # Adjust label styling
+    for autotext in autotexts:
+        autotext.set_color('white')
+        autotext.set_fontsize(9)
+        autotext.set_weight('bold')
     
     # Save the chart as an image
     chart_path = f'temp_pie_chart_{date_str.replace("/", "_")}.png'
-    plt.savefig(chart_path, bbox_inches='tight')
+    plt.savefig(chart_path, bbox_inches='tight', dpi=300)
     plt.close(fig)  # Close the figure to free memory
     
     return chart_path
