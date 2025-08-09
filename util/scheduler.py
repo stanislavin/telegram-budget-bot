@@ -20,7 +20,7 @@ class DailySummaryScheduler:
     async def send_daily_summary(self, context: ContextTypes.DEFAULT_TYPE):
         """Send daily summary to the user."""
         try:
-            summary_text = await get_daily_summary()
+            summary_text, chart_path = await get_daily_summary()
             await context.bot.send_message(
                 chat_id=self.chat_id,
                 text=f"🕐 Daily Summary (17:00):\n\n{summary_text}"

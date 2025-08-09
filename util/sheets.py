@@ -1,7 +1,9 @@
 import logging
+import os
 from datetime import datetime, timedelta
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+import matplotlib.pyplot as plt
 
 from util.config import GOOGLE_CREDENTIALS_PATH, GOOGLE_SHEET_ID, SHEET_NAME, RANGE_NAME, GOOGLE_SCOPES
 
@@ -55,6 +57,28 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
     except Exception as e:
         return False, str(e)
 
+def generate_pie_chart(category_totals, currency, date_str):
+    """Generate a pie chart for category spending and save as an image."""
+    # Create figure and axis
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    # Sort categories by amount (descending)
+    sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
+    labels = [item[0] for item in sorted_categories]
+    sizes = [item[1] for item in sorted_categories]
+    
+    # Create pie chart
+    ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90)
+    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
+    ax.set_title(f'Daily Spending by Category - {date_str}')
+    
+    # Save the chart as an image
+    chart_path = f'temp_pie_chart_{date_str.replace("/", "_")}.png'
+    plt.savefig(chart_path, bbox_inches='tight')
+    plt.close(fig)  # Close the figure to free memory
+    
+    return chart_path
+
 async def get_daily_summary(target_date: datetime = None):
     """Get daily spending summary by category for a specific date."""
     try:
@@ -77,7 +101,7 @@ async def get_daily_summary(target_date: datetime = None):
         
         values = result.get('values', [])
         if not values:
-            return "No expenses found."
+            return "No expenses found.", None
         
         # Group expenses by category for the target date
         category_totals = {}
@@ -110,7 +134,7 @@ async def get_daily_summary(target_date: datetime = None):
         
         if not category_totals:
             formatted_date = target_date.strftime("%d/%m/%Y")
-            return f"No expenses found for {formatted_date}."
+            return f"No expenses found for {formatted_date}.", None
         
         # Format the message
         formatted_date = target_date.strftime("%d/%m/%Y")
@@ -124,11 +148,14 @@ async def get_daily_summary(target_date: datetime = None):
         
         message += f"\n💸 Total spent: {total_spent:.2f} {currency}"
         
-        return message
+        # Generate pie chart
+        chart_path = generate_pie_chart(category_totals, currency, formatted_date)
+        
+        return message, chart_path
         
     except Exception as e:
         logger.error(f"Error fetching daily summary: {str(e)}")
-        return f"Error fetching daily summary: {str(e)}"
+        return f"Error fetching daily summary: {str(e)}", None
 
 async def get_recent_expenses(days: int = 2):
     """Fetch expenses from the last N days from Google Sheets."""

@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -64,8 +65,16 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
     await update.message.reply_text("🔄 Calculating today's expenses...")
-    summary_text = await get_daily_summary()
-    await update.message.reply_text(summary_text)
+    summary_text, chart_path = await get_daily_summary()
+    
+    if chart_path and os.path.exists(chart_path):
+        # Send the chart image
+        await update.message.reply_photo(photo=open(chart_path, 'rb'), caption=summary_text)
+        # Clean up the temporary chart file
+        os.remove(chart_path)
+    else:
+        # Send only the text if chart generation failed
+        await update.message.reply_text(summary_text)
 
 async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Automatically confirm an expense after 10 seconds if no user action."""
@@ -251,8 +260,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
-        summary_text = await get_daily_summary()
-        await update.message.reply_text(summary_text)
+        summary_text, chart_path = await get_daily_summary()
+        
+        if chart_path and os.path.exists(chart_path):
+            # Send the chart image
+            await update.message.reply_photo(photo=open(chart_path, 'rb'), caption=summary_text)
+            # Clean up the temporary chart file
+            os.remove(chart_path)
+        else:
+            # Send only the text if chart generation failed
+            await update.message.reply_text(summary_text)
         return
     elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
