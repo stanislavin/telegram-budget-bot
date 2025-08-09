@@ -3,6 +3,7 @@ import requests
 import time
 from flask import Flask
 from threading import Thread
+from requests.exceptions import Timeout, RequestException
 
 from util.config import SERVICE_URL, HEALTH_CHECK_PORT, HEALTH_CHECK_HOST
 
