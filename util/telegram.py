@@ -4,8 +4,9 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt
-from util.sheets import save_to_sheets, get_recent_expenses
+from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary
 from util.openrouter import process_with_openrouter
+from util.scheduler import start_daily_summary_scheduler
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +29,23 @@ def get_command_keyboard():
     keyboard = [
         [KeyboardButton("💰 Add Expense")],
         [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
-        [KeyboardButton("📅 Recent Expenses"), KeyboardButton("🏓 Ping")]
+        [KeyboardButton("📅 Recent Expenses"), KeyboardButton("💸 Today's Summary")],
+        [KeyboardButton("🏓 Ping")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
+    chat_id = str(update.message.chat_id)
+    
+    # Start daily summary scheduler for this chat
+    start_daily_summary_scheduler(chat_id, context, "UTC")
+    
     await update.message.reply_text(
         'Hi! I\'m your budget tracking bot. Send me messages in the format:\n'
         'amount currency category description\n'
-        'Example: 25.50 USD food groceries',
+        'Example: 25.50 USD food groceries\n\n'
+        '🕐 I\'ll also send you a daily spending summary every day at 20:00 UTC.',
         reply_markup=get_command_keyboard()
     )
 
@@ -47,9 +55,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Send me messages in the format:\n'
         'amount currency category description\n'
         'Example: 25.50 USD food groceries\n\n'
+        'Commands:\n'
+        '/summary - Get today\'s spending summary\n\n'
         'Or use the buttons below to interact with me!',
         reply_markup=get_command_keyboard()
     )
+
+async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send today's spending summary."""
+    await update.message.reply_text("🔄 Calculating today's expenses...")
+    summary_text = await get_daily_summary()
+    await update.message.reply_text(summary_text)
 
 async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Automatically confirm an expense after 10 seconds if no user action."""
@@ -233,6 +249,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         expenses_text = await get_recent_expenses()
         await update.message.reply_text(expenses_text)
         return
+    elif message == "💸 Today's Summary":
+        await update.message.reply_text("🔄 Calculating today's expenses...")
+        summary_text = await get_daily_summary()
+        await update.message.reply_text(summary_text)
+        return
     elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
         return
@@ -291,6 +312,7 @@ def create_application():
     # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("summary", summary_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     
