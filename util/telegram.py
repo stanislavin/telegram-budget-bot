@@ -55,8 +55,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
     """Automatically confirm an expense after 10 seconds if no user action."""
     await asyncio.sleep(10)  # Wait for 10 seconds
     
-    # Check if expense still exists (not confirmed or cancelled)
-    expense_data = pending_expenses.get(expense_id)
+    expense_data = pending_expenses.pop(expense_id, None)
     if not expense_data:
         return
     
@@ -143,11 +142,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         else:
             await query.edit_message_text(f"❌ Error saving to spreadsheet: {error}")
-        
-        # Clean up
+
+        # Clean up regardless of success or failure as the button action has been processed
         if expense_id in pending_expenses:
             del pending_expenses[expense_id]
-    
+            
     elif action == 'cancel':
         await query.edit_message_text("Expense cancelled.")
         if expense_id in pending_expenses:
