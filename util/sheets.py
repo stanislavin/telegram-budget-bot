@@ -55,6 +55,81 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
     except Exception as e:
         return False, str(e)
 
+async def get_daily_summary(target_date: datetime = None):
+    """Get daily spending summary by category for a specific date."""
+    try:
+        service = get_google_sheets_service()
+        sheet = service.spreadsheets()
+        
+        # Use today if no date provided
+        if target_date is None:
+            target_date = datetime.now().date()
+        elif hasattr(target_date, 'date'):
+            target_date = target_date.date()
+        
+        logger.info(f"Fetching daily summary for {target_date.strftime('%Y-%m-%d')}")
+        
+        # Get all data from the sheet
+        result = sheet.values().get(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            range=RANGE_NAME
+        ).execute()
+        
+        values = result.get('values', [])
+        if not values:
+            return "No expenses found."
+        
+        # Group expenses by category for the target date
+        category_totals = {}
+        total_spent = 0
+        currency = None
+        
+        for row in values[1:]:  # Skip header row
+            if len(row) >= 6:  # Ensure row has all required columns
+                try:
+                    # Parse the timestamp from the sheet
+                    timestamp_str = row[0]  # Column A
+                    timestamp = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
+                    
+                    # Check if the expense is from the target date
+                    if timestamp.date() == target_date:
+                        amount = float(row[1])  # Column B
+                        category = row[2]  # Column C
+                        currency = row[5]  # Column F
+                        
+                        # Add to category total
+                        if category in category_totals:
+                            category_totals[category] += amount
+                        else:
+                            category_totals[category] = amount
+                        
+                        total_spent += amount
+                except (ValueError, IndexError) as e:
+                    logger.error(f"Error parsing row: {row}, error: {str(e)}")
+                    continue
+        
+        if not category_totals:
+            formatted_date = target_date.strftime("%d/%m/%Y")
+            return f"No expenses found for {formatted_date}."
+        
+        # Format the message
+        formatted_date = target_date.strftime("%d/%m/%Y")
+        message = f"💰 Daily Summary for {formatted_date}:\n\n"
+        
+        # Sort categories by amount (highest first)
+        sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
+        
+        for category, amount in sorted_categories:
+            message += f"📊 {category}: {amount:.2f} {currency}\n"
+        
+        message += f"\n💸 Total spent: {total_spent:.2f} {currency}"
+        
+        return message
+        
+    except Exception as e:
+        logger.error(f"Error fetching daily summary: {str(e)}")
+        return f"Error fetching daily summary: {str(e)}"
+
 async def get_recent_expenses(days: int = 2):
     """Fetch expenses from the last N days from Google Sheets."""
     try:
