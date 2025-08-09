@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import os
 from datetime import datetime, time
 from typing import Optional
 import pytz
@@ -21,10 +22,24 @@ class DailySummaryScheduler:
         """Send daily summary to the user."""
         try:
             summary_text, chart_path = await get_daily_summary()
-            await context.bot.send_message(
-                chat_id=self.chat_id,
-                text=f"🕐 Daily Summary (17:00):\n\n{summary_text}"
-            )
+            
+            # Send the chart image if it was generated successfully
+            if chart_path and os.path.exists(chart_path):
+                # Send the chart image with the summary text as caption
+                await context.bot.send_photo(
+                    chat_id=self.chat_id,
+                    photo=open(chart_path, 'rb'),
+                    caption=f"🕐 Daily Summary (17:00):\n\n{summary_text}"
+                )
+                # Clean up the temporary chart file
+                os.remove(chart_path)
+            else:
+                # Send only the text if chart generation failed
+                await context.bot.send_message(
+                    chat_id=self.chat_id,
+                    text=f"🕐 Daily Summary (17:00):\n\n{summary_text}"
+                )
+            
             logger.info(f"Daily summary sent to chat {self.chat_id}")
         except Exception as e:
             logger.error(f"Failed to send daily summary to chat {self.chat_id}: {str(e)}")
