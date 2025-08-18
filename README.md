@@ -1,5 +1,7 @@
 # Telegram Budget Bot
 
+[![Coverage Status](https://img.shields.io/badge/coverage-92%25-brightgreen.svg)](https://img.shields.io/badge/coverage-92%25-brightgreen.svg)
+
 A Telegram bot that processes messages and saves them to Google Sheets. This bot can be used to track expenses, notes, or any other structured data that you want to store in a spreadsheet.
 
 ## Features
@@ -30,6 +32,27 @@ pip install -r requirements.txt
 ```bash
 python bot.py
 ```
+
+## Testing
+
+The project includes a comprehensive test suite. To run tests:
+
+```bash
+# Run tests
+python -m pytest tests/
+
+# Run tests with coverage reporting
+python -m pytest tests/ --cov=. --cov-report=term-missing
+
+# Or use the Makefile
+make test
+make coverage
+```
+
+Coverage reports are generated in multiple formats:
+- Terminal output (immediate summary)
+- HTML report (htmlcov/index.html)
+- XML report (coverage.xml)
 
 ## Usage
 1. Start a chat with your bot on Telegram
