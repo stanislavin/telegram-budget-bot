@@ -163,4 +163,4 @@ cython_debug/
 temp_pie_chart_*.png
 
 # Coverage reports
-.coverage
+.coverage"n# Temporary and sensitive filesnTESTncredentials.jsonnpackage-lock.json"
