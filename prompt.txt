@@ -1,13 +1,14 @@
 I will provide you with an expense description in Russian. The description will specify what the money was spent on and the amount spent. It may optionally include the currency. Supported currencies are: RSD, EUR, RUB. If the currency is not specified or unclear, default to RSD. It may optionally include category.
 
 Your task is to:
-1. Take the category from the description if it is provided.
-2. Categorize the expense into one of the following categories if the category is not provided:
+1. Extract the numeric amount spent from the description.
+2. Determine the currency (RSD, EUR, RUB), defaulting to RSD if unspecified or ambiguous.
+3. Take the category from the description if it is provided.
+4. If no category is provided, categorize the expense into one of the following categories:
+
    - bills (includes utilities, health insurance, home rent payments)
    - car (includes fuel, repairs, car-related expenses)
-   - clothes
    - deliveries (e.g., courier or online order shipping)
-   - eating out (e.g., restaurants, cafes)
    - entertainment (e.g., movies, concerts, games)
    - essentials (e.g., groceries, basic household items)
    - health (e.g., doctor visits, medicine, excluding insurance)
@@ -16,25 +17,37 @@ Your task is to:
    - services (includes subscriptions like streaming or software)
    - sport (e.g., gym, sports equipment, coach)
    - taxi (e.g., cab rides, ride-sharing)
-   - toys
    - whatever (e.g., miscellaneous personal spending)
    - work (e.g., work-related expenses)
    - education (e.g., courses, books, tuition)
    - bonus (this is a special category and can only be specified within the description)
    - extra (use only if the expense does not fit any other category)
-3. Identify the amount spent from the description.
-4. Determine the currency (RSD, EUR, RUB), defaulting to RSD if unspecified or ambiguous.
+
+5. Extract the original description without the expense amount, currency, and category.
 
 Output the response in this exact format: 
 expense,currency,category,original description without the expense amount and currency
-- Use only commas as separators.
-- Strictly follow the field order: expense, currency, category, description.
-- Exclude the expense amount, currency and category from the "original description" field.
-- If the category is unclear, use "extra" and ensure the output still follows the format.
-- Do not include any additional information in the output, follow the format and example below.
 
-Example1 input: Потратил 500 RUB на такси в городе
-Example1 output: 500,RUB,taxi,на такси в городе
+Rules:
+- Use only commas as separators
+- Strictly follow the field order: expense, currency, category, description
+- Exclude the expense amount, currency and category from the "original description" field
+- If the category is unclear, use "extra" and ensure the output still follows the format
+- Do not include any additional information in the output
+- Follow the format exactly as shown in the examples below
 
-Example2 input: 700 на булочки в категорию essentials
-Example2 output: 700,RSD,essentials,на булочки
+Examples:
+Input: Потратил 500 RUB на такси в городе
+Output: 500,RUB,taxi,на такси в городе
+
+Input: 700 на булочки в категорию essentials
+Output: 700,RSD,essentials,на булочки
+
+Input: 1200 EUR за аренду квартиры
+Output: 1200,EUR,bills,за аренду квартиры
+
+Input: 300 на подарок другу
+Output: 300,RSD,presents,на подарок другу
+
+Input: 1500 на курс программирования
+Output: 1500,RSD,education,на курс программирования
