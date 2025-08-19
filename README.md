@@ -78,6 +78,11 @@ graph TD
         BC -->|Change Category| UI
     end
 
+    subgraph Scheduler System
+        DS[Daily Scheduler] -->|17:00 UTC| SMS[Send Daily Summary]
+        SMS -->|To All Users| GS
+    end
+
     subgraph Health Monitoring
         Flask[Flask Server] -->|/health| HealthCheck
         Flask -->|/nudge| Nudge
@@ -86,18 +91,22 @@ graph TD
 
     subgraph Data Storage
         GS[Google Sheets] -->|Store| Data[(Expense Data)]
+        GS -->|Retrieve| RS[Recent Expenses]
+        GS -->|Summarize| DSUM[Daily Summary]
     end
 
     subgraph Environment
         ENV[.env] -->|Config| TB
         ENV -->|Config| GS
         ENV -->|Config| OR
+        ENV -->|Config| DS
     end
 
     style TB fill:#f9f,stroke:#333,stroke-width:2px
     style Flask fill:#bbf,stroke:#333,stroke-width:2px
     style GS fill:#bfb,stroke:#333,stroke-width:2px
     style ENV fill:#fbb,stroke:#333,stroke-width:2px
+    style DS fill:#fbb,stroke:#333,stroke-width:2px
 ```
 
 This diagram illustrates the main components of the Telegram Budget Bot:
@@ -108,16 +117,22 @@ This diagram illustrates the main components of the Telegram Budget Bot:
    - Manages pending expenses
    - Provides interactive UI with buttons
 
-2. **Health Monitoring**
+2. **Scheduler System**
+   - Daily summary scheduler that runs at 17:00 UTC
+   - Sends daily expense summaries to all registered users
+   - Multi-user support for daily notifications
+
+3. **Health Monitoring**
    - Flask server for health checks
    - Nudge pinger to keep the service alive
    - Runs in a separate thread
 
-3. **Data Storage**
+4. **Data Storage**
    - Google Sheets integration
    - Stores expense data with timestamps
+   - Retrieves recent expenses and generates daily summaries
 
-4. **Environment Configuration**
+5. **Environment Configuration**
    - Uses .env file for configuration
    - Manages API keys and credentials
    - Configures all major components
