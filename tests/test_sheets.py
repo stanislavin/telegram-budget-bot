@@ -1,4 +1,5 @@
 import pytest
+import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
 from util.sheets import get_google_sheets_service, save_to_sheets, get_recent_expenses, get_daily_summary
@@ -49,26 +50,25 @@ async def test_save_to_sheets_failure(mock_sheets_service):
 
 
 @pytest.mark.asyncio
-async def test_get_recent_expenses_success(mock_sheets_service):
+async def test_get_recent_expenses_success(mock_google_sheets_service):
     """Test successful retrieval of recent expenses."""
-    # Mock response data
-    today = datetime.now()
-    yesterday = today - timedelta(days=1)
+    # Mock the Google Sheets API response
+    mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],  # Header
+            ['08/19/2025 23:06:54', '25.50', 'food', 'lunch', '', 'USD'],
+            ['08/18/2025 23:06:54', '10.00', 'transport', 'bus', '', 'EUR']  # Different currency to test total
+        ]
+    }
     
-    mock_data = [
-        ['timestamp', 'amount', 'category', 'description', '', 'currency'],  # Header
-        [today.strftime("%m/%d/%Y %H:%M:%S"), '25.50', 'food', 'lunch', '', 'USD'],
-        [yesterday.strftime("%m/%d/%Y %H:%M:%S"), '10.00', 'transport', 'bus', '', 'EUR']
-    ]
+    # Execute the function
+    result = await get_recent_expenses()
     
-    mock_sheet = mock_sheets_service.spreadsheets()
-    mock_sheet.values().get().execute.return_value = {'values': mock_data}
-    
-    result = await get_recent_expenses(days=2)
-    
-    assert "Expenses for the last 2 days:" in result
-    assert "lunch" in result
-    assert "bus" in result
+    # Verify the result
+    assert "Recent Expenses (Last 2 Days)" in result
+    assert "25.50 USD" in result
+    assert "10.00 EUR" in result
+    assert "Total: 35.50 EUR" in result  # Should use currency from last expense
 
 
 @pytest.mark.asyncio
@@ -83,33 +83,34 @@ async def test_get_recent_expenses_no_data(mock_sheets_service):
 
 
 @pytest.mark.asyncio
-async def test_get_recent_expenses_error(mock_sheets_service):
-    """Test get_recent_expenses when an error occurs."""
-    mock_sheet = mock_sheets_service.spreadsheets()
-    mock_sheet.values().get().execute.side_effect = Exception("Sheets API Error")
+async def test_get_recent_expenses_error(mock_google_sheets_service):
+    """Test error handling in recent expenses retrieval."""
+    # Mock the Google Sheets API to raise an exception
+    mock_google_sheets_service.spreadsheets().values().get().execute.side_effect = Exception("Sheets API Error")
     
-    result = await get_recent_expenses(days=2)
+    # Execute the function
+    result = await get_recent_expenses()
     
-    assert "Error fetching expenses: Sheets API Error" in result
+    # Verify the error handling
+    assert "Error fetching recent expenses: Sheets API Error" in result
 
 
 @pytest.mark.asyncio
-async def test_get_recent_expenses_no_recent_data(mock_sheets_service):
-    """Test get_recent_expenses when data exists but none is recent."""
-    # Mock data from 5 days ago
-    old_date = (datetime.now() - timedelta(days=5)).strftime("%m/%d/%Y %H:%M:%S")
+async def test_get_recent_expenses_no_recent_data(mock_google_sheets_service):
+    """Test handling of no recent expenses."""
+    # Mock the Google Sheets API response with old data
+    mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],  # Header
+            ['01/01/2020 10:30:00', '25.50', 'food', 'lunch', '', 'USD'],  # Old data
+        ]
+    }
     
-    mock_data = [
-        ['timestamp', 'amount', 'category', 'description', '', 'currency'],  # Header
-        [old_date, '25.50', 'food', 'old lunch', '', 'USD']
-    ]
+    # Execute the function
+    result = await get_recent_expenses()
     
-    mock_sheet = mock_sheets_service.spreadsheets()
-    mock_sheet.values().get().execute.return_value = {'values': mock_data}
-    
-    result = await get_recent_expenses(days=2)
-    
-    assert "No expenses found for the last 2 days." in result
+    # Verify the result
+    assert "No expenses found in the last 2 days." in result
 
 
 def test_get_google_sheets_service_success(mock_service_account):

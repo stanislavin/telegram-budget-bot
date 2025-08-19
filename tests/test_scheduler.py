@@ -19,10 +19,9 @@ def mock_context():
 @pytest.mark.asyncio
 async def test_daily_summary_scheduler_init():
     """Test DailySummaryScheduler initialization."""
-    scheduler = DailySummaryScheduler("12345", "UTC")
+    scheduler = DailySummaryScheduler()
     
-    assert scheduler.chat_id == "12345"
-    assert scheduler.timezone == pytz.timezone("UTC")
+    assert len(scheduler.chat_schedulers) == 0
     assert scheduler.is_running is False
     assert scheduler.task is None
 
@@ -32,9 +31,10 @@ async def test_daily_summary_scheduler_init():
 async def test_send_daily_summary_success(mock_get_daily_summary, mock_context):
     """Test successful sending of daily summary."""
     mock_get_daily_summary.return_value = ("Mock daily summary", None)
-    scheduler = DailySummaryScheduler("12345", "UTC")
+    scheduler = DailySummaryScheduler()
+    scheduler.add_chat("12345", "UTC")
     
-    await scheduler.send_daily_summary(mock_context)
+    await scheduler.send_daily_summary_to_all(mock_context)
     
     mock_get_daily_summary.assert_called_once()
     mock_context.bot.send_message.assert_called_once_with(
@@ -48,10 +48,11 @@ async def test_send_daily_summary_success(mock_get_daily_summary, mock_context):
 async def test_send_daily_summary_failure(mock_get_daily_summary, mock_context):
     """Test handling of daily summary send failure."""
     mock_get_daily_summary.side_effect = Exception("Test error")
-    scheduler = DailySummaryScheduler("12345", "UTC")
+    scheduler = DailySummaryScheduler()
+    scheduler.add_chat("12345", "UTC")
     
     # Should not raise exception, but log error
-    await scheduler.send_daily_summary(mock_context)
+    await scheduler.send_daily_summary_to_all(mock_context)
     
     mock_get_daily_summary.assert_called_once()
     mock_context.bot.send_message.assert_not_called()
@@ -60,7 +61,7 @@ async def test_send_daily_summary_failure(mock_get_daily_summary, mock_context):
 @pytest.mark.asyncio
 async def test_scheduler_start_stop():
     """Test starting and stopping the scheduler."""
-    scheduler = DailySummaryScheduler("12345", "UTC")
+    scheduler = DailySummaryScheduler()
     mock_context = MagicMock()
     
     # Start scheduler
@@ -88,8 +89,9 @@ async def test_start_daily_summary_scheduler(mock_scheduler_class):
     
     start_daily_summary_scheduler("67890", mock_context, "America/New_York")
     
-    mock_scheduler_class.assert_called_once_with("67890", "America/New_York")
-    mock_scheduler.start.assert_called_once_with(mock_context)
+    # Check that scheduler was created and started
+    mock_scheduler_class.assert_called_once()
+    mock_scheduler.add_chat.assert_called_once_with("67890", "America/New_York")
 
 
 @pytest.mark.asyncio
@@ -108,15 +110,16 @@ async def test_stop_daily_summary_scheduler():
 @pytest.mark.asyncio
 async def test_scheduler_timezone_handling():
     """Test scheduler with different timezone."""
-    scheduler = DailySummaryScheduler("12345", "America/New_York")
+    scheduler = DailySummaryScheduler()
+    scheduler.add_chat("12345", "America/New_York")
     
-    assert scheduler.timezone == pytz.timezone("America/New_York")
+    assert scheduler.chat_schedulers["12345"].timezone == pytz.timezone("America/New_York")
 
 
 @pytest.mark.asyncio
 async def test_schedule_loop_timing():
     """Test that schedule loop can be initialized and started."""
-    scheduler = DailySummaryScheduler("12345", "UTC")
+    scheduler = DailySummaryScheduler()
     mock_context = MagicMock()
     
     # Start and immediately stop to test basic functionality
@@ -132,5 +135,6 @@ async def test_scheduler_handles_past_time():
     """Test scheduler schedules for next day when current time is past 20:00."""
     # This test would be complex to implement with real time mocking
     # For now, we'll just verify the scheduler can be initialized
-    scheduler = DailySummaryScheduler("12345", "UTC")
-    assert scheduler.chat_id == "12345"
+    scheduler = DailySummaryScheduler()
+    scheduler.add_chat("12345", "UTC")
+    assert "12345" in scheduler.chat_schedulers

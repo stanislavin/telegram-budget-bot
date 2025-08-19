@@ -113,7 +113,9 @@ async def get_daily_summary(target_date: datetime = None):
         ).execute()
         
         values = result.get('values', [])
+        logger.info(f"Retrieved {len(values)} rows from Google Sheets")
         if not values:
+            logger.info("No data found in Google Sheets")
             return "No expenses found.", None
         
         # Group expenses by category for the target date
@@ -121,18 +123,33 @@ async def get_daily_summary(target_date: datetime = None):
         total_spent = 0
         currency = None
         
-        for row in values[1:]:  # Skip header row
+        for i, row in enumerate(values[1:]):  # Skip header row
             if len(row) >= 6:  # Ensure row has all required columns
                 try:
                     # Parse the timestamp from the sheet
                     timestamp_str = row[0]  # Column A
-                    timestamp = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
+                    logger.debug(f"Parsing row {i+2}: timestamp='{timestamp_str}'")
+                    
+                    # Try multiple date formats
+                    timestamp = None
+                    for fmt in ["%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S"]:
+                        try:
+                            timestamp = datetime.strptime(timestamp_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if timestamp is None:
+                        logger.error(f"Unable to parse timestamp: {timestamp_str}")
+                        continue
                     
                     # Check if the expense is from the target date
                     if timestamp.date() == target_date:
                         amount = float(row[1])  # Column B
                         category = row[2]  # Column C
                         currency = row[5]  # Column F
+                        
+                        logger.debug(f"Matched expense: {amount} {currency} in {category}")
                         
                         # Add to category total
                         if category in category_totals:
@@ -142,11 +159,13 @@ async def get_daily_summary(target_date: datetime = None):
                         
                         total_spent += amount
                 except (ValueError, IndexError) as e:
-                    logger.error(f"Error parsing row: {row}, error: {str(e)}")
+                    logger.error(f"Error parsing row {i+2}: {row}, error: {str(e)}")
                     continue
         
+        logger.info(f"Found {len(category_totals)} categories with total spent: {total_spent}")
         if not category_totals:
             formatted_date = target_date.strftime("%d/%m/%Y")
+            logger.info(f"No expenses found for {formatted_date}")
             return f"No expenses found for {formatted_date}.", None
         
         # Format the message
@@ -161,13 +180,16 @@ async def get_daily_summary(target_date: datetime = None):
         
         message += f"\n💸 Total spent: {total_spent:.2f} {currency}"
         
+        logger.info(f"Generated summary message: {message[:100]}...")
+        
         # Generate pie chart
         chart_path = generate_pie_chart(category_totals, currency, formatted_date)
+        logger.info(f"Generated chart at: {chart_path}")
         
         return message, chart_path
         
     except Exception as e:
-        logger.error(f"Error fetching daily summary: {str(e)}")
+        logger.error(f"Error fetching daily summary: {str(e)}", exc_info=True)
         return f"Error fetching daily summary: {str(e)}", None
 
 async def get_recent_expenses(days: int = 2):
@@ -201,43 +223,55 @@ async def get_recent_expenses(days: int = 2):
         for row in values[1:]:  # Skip header row
             if len(row) >= 6:  # Ensure row has all required columns
                 try:
-                    # Parse the timestamp from the sheet
+                    # Parse timestamp and amount
                     timestamp_str = row[0]  # Column A
-                    timestamp = datetime.strptime(timestamp_str, "%m/%d/%Y %H:%M:%S")
                     
-                    # Check if the expense is within the date range
+                    # Try multiple date formats
+                    timestamp = None
+                    for fmt in ["%Y-%m-%d %H:%M:%S", "%m/%d/%Y %H:%M:%S"]:
+                        try:
+                            timestamp = datetime.strptime(timestamp_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    
+                    if timestamp is None:
+                        continue
+                    
+                    # Check if the expense is within the last N days
                     if start_date <= timestamp.date() <= today:
                         amount = float(row[1])  # Column B
+                        category = row[2]  # Column C
                         description = row[3]  # Column D
                         currency = row[5]  # Column F
                         
-                        # Format date and amount
-                        formatted_date = timestamp.strftime("%d/%m")
-                        whole_amount = int(amount)
-                        
-                        # Create a simple line
-                        line = f"{formatted_date} {whole_amount}{currency} {description}"
-                        # Truncate line if longer than 36 characters
-                        if len(line) > 36:
-                            line = line[:33] + "..."
-                        recent_expenses.append((timestamp, line))
+                        # Format the expense entry
+                        formatted_timestamp = timestamp.strftime("%d/%m/%Y %H:%M")
+                        recent_expenses.append(f"{formatted_timestamp} | {amount:.2f} {currency} | {category} | {description}")
                         total_amount += amount
-                except (ValueError, IndexError) as e:
-                    logger.error(f"Error parsing row: {row}, error: {str(e)}")
+                        
+                except (ValueError, IndexError):
+                    # Skip rows with parsing errors
                     continue
         
         if not recent_expenses:
-            return f"No expenses found for the last {days} days."
-        
-        # Sort expenses by date in ascending order (oldest first)
-        recent_expenses.sort(key=lambda x: x[0])
+            return f"No expenses found in the last {days} days."
         
         # Format the message
-        message = f"Expenses for the last {days} days:\n\n"
-        message += "\n".join(line for _, line in recent_expenses)
+        message = f"📅 Recent Expenses (Last {days} Days):\n\n"
+        message += "Date/Time | Amount | Category | Description\n"
+        message += "-" * 50 + "\n"
+        
+        # Sort by timestamp (newest first)
+        recent_expenses.sort(reverse=True)
+        
+        for expense in recent_expenses:
+            message += expense + "\n"
+        
+        message += f"\n💸 Total: {total_amount:.2f} {currency}"
         
         return message
         
     except Exception as e:
         logger.error(f"Error fetching recent expenses: {str(e)}")
-        return f"Error fetching expenses: {str(e)}" 
+        return f"Error fetching recent expenses: {str(e)}"
