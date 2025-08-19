@@ -5,6 +5,9 @@ from util.config import OPENROUTER_API_KEY, OPENROUTER_LLM_VERSION, OPENROUTER_U
 
 logger = logging.getLogger(__name__)
 
+# Define supported currencies
+SUPPORTED_CURRENCIES = {'RSD', 'EUR', 'RUB'}
+
 async def process_with_openrouter(message: str) -> tuple:
     """Process message using OpenRouter API and return formatted data."""
     try:
@@ -40,6 +43,13 @@ async def process_with_openrouter(message: str) -> tuple:
         currency = parts[1].upper()
         category = parts[2]
         description = parts[3]
+        
+        # Ensure currency defaults to RSD if not specified or invalid
+        # Only default to RSD if the currency is truly unspecified or invalid
+        # The prompt says to default to RSD if unspecified OR ambiguous
+        if currency not in SUPPORTED_CURRENCIES:
+            logger.warning(f"Invalid or ambiguous currency '{currency}' detected, defaulting to RSD")
+            currency = 'RSD'
         
         return (amount, currency, category, description), None
         

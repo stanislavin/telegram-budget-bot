@@ -14,7 +14,8 @@ This Telegram Budget Bot is a comprehensive expense tracking solution that integ
 - Removed prompt optimization tests that were dependent on removed files
 - Updated .gitignore to exclude sensitive and temporary files
 - Added test coverage reporting functionality
-- All tests are now passing (74 tests with 92% coverage)
+- Fixed currency defaulting issue: now properly defaults to RSD when no currency is specified
+- All tests are now passing (78 tests with 93% coverage)
 
 ## How to Run Tests
 
