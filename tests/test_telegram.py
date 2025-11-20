@@ -119,7 +119,7 @@ async def test_button_callback_confirm_success(mock_get_daily_stats, mock_save_t
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
     mock_save_to_sheets.return_value = (True, None)
     
-    mock_get_daily_stats.return_value = (100.0, 'EUR', {})
+    mock_get_daily_stats.return_value = ({'EUR': 100.0}, {})
     
     await button_callback(mock_update, mock_context)
     
@@ -253,7 +253,7 @@ async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_s
     }
     mock_save_to_sheets.return_value = (True, None)
     
-    mock_get_daily_stats.return_value = (50.0, 'GBP', {})
+    mock_get_daily_stats.return_value = ({'GBP': 50.0}, {})
     
     # We need to run this in a separate task as auto_confirm_expense has a sleep
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))

@@ -97,12 +97,15 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
     
     if success:
         # Get daily stats
-        total_spent, currency, _ = await get_daily_stats()
+        currency_totals, _ = await get_daily_stats()
+        
+        # Format totals
+        totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
         
         await status_message.edit_text(
             f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
             f"{expense_data['category']} - {expense_data['description']}\n\n"
-            f"💸 Total spent today: {total_spent:.2f} {currency}"
+            f"💸 Total spent today: {totals_str}"
         )
     else:
         await status_message.edit_text(f"❌ Error auto-saving to spreadsheet: {error}")
@@ -166,12 +169,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if success:
             # Get daily stats
-            total_spent, currency, _ = await get_daily_stats()
+            currency_totals, _ = await get_daily_stats()
+            
+            # Format totals
+            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
             
             await query.edit_message_text(
                 f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
                 f"{expense_data['category']} - {expense_data['description']}\n\n"
-                f"💸 Total spent today: {total_spent:.2f} {currency}"
+                f"💸 Total spent today: {totals_str}"
             )
         else:
             await query.edit_message_text(f"❌ Error saving to spreadsheet: {error}")
