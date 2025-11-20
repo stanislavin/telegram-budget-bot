@@ -114,12 +114,11 @@ async def get_daily_stats(target_date: datetime = None):
         
         values = result.get('values', [])
         if not values:
-            return 0, None, {}
+            return {}, {}
         
         # Group expenses by category for the target date
         category_totals = {}
-        total_spent = 0
-        currency = None
+        currency_totals = {}
         
         for i, row in enumerate(values[1:]):  # Skip header row
             if len(row) >= 6:  # Ensure row has all required columns
@@ -146,16 +145,27 @@ async def get_daily_stats(target_date: datetime = None):
                         currency = row[5]  # Column F
                         
                         # Add to category total
+                        # We need to track category totals per currency for the pie chart if we want to be precise,
+                        # but for now the pie chart logic assumes one currency or mixes them.
+                        # Let's keep category_totals simple for now (summing amounts regardless of currency for the chart size)
+                        # or better, let's just track amounts.
+                        # The original code summed up amounts for category_totals.
+                        
                         if category in category_totals:
                             category_totals[category] += amount
                         else:
                             category_totals[category] = amount
                         
-                        total_spent += amount
+                        # Add to currency total
+                        if currency in currency_totals:
+                            currency_totals[currency] += amount
+                        else:
+                            currency_totals[currency] = amount
+                            
                 except (ValueError, IndexError):
                     continue
         
-        return total_spent, currency, category_totals
+        return currency_totals, category_totals
         
     except Exception as e:
         logger.error(f"Error fetching daily stats: {str(e)}")
@@ -170,7 +180,7 @@ async def get_daily_summary(target_date: datetime = None):
         elif hasattr(target_date, 'date'):
             target_date = target_date.date()
             
-        total_spent, currency, category_totals = await get_daily_stats(target_date)
+        currency_totals, category_totals = await get_daily_stats(target_date)
         
         formatted_date = target_date.strftime("%d/%m/%Y")
         
@@ -184,15 +194,35 @@ async def get_daily_summary(target_date: datetime = None):
         # Sort categories by amount (highest first)
         sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
         
-        for category, amount in sorted_categories:
-            message += f"📊 {category}: {amount:.2f} {currency}\n"
+        # Note: The category breakdown currently doesn't show currency if mixed.
+        # This is a limitation of the current display logic which we might want to address later.
+        # For now, we'll just list the categories and their values.
+        # To make it better, we should probably list categories with their dominant currency or just the value.
+        # However, the prompt asked for "totals per currency".
         
-        message += f"\n💸 Total spent: {total_spent:.2f} {currency}"
+        for category, amount in sorted_categories:
+             # We don't have per-category currency here easily without more refactoring.
+             # Let's just show the amount and maybe a generic label or just the amount.
+             # The previous code used a single 'currency' variable which was just the LAST currency seen.
+             # Let's try to infer the currency if there is only one, otherwise maybe omit it or show 'mixed'?
+             
+             if len(currency_totals) == 1:
+                 currency = list(currency_totals.keys())[0]
+                 message += f"📊 {category}: {amount:.2f} {currency}\n"
+             else:
+                 # If mixed currencies, just show the amount (it's a sum of mixed units, which is weird but existing behavior for categories)
+                 message += f"📊 {category}: {amount:.2f}\n"
+        
+        message += "\n💸 Total spent:\n"
+        for currency, total in currency_totals.items():
+            message += f"- {total:.2f} {currency}\n"
         
         logger.info(f"Generated summary message: {message[:100]}...")
         
         # Generate pie chart
-        chart_path = generate_pie_chart(category_totals, currency, formatted_date)
+        # For the pie chart, we'll pass the primary currency if only one, else 'Mixed'
+        chart_currency = list(currency_totals.keys())[0] if len(currency_totals) == 1 else "Mixed"
+        chart_path = generate_pie_chart(category_totals, chart_currency, formatted_date)
         logger.info(f"Generated chart at: {chart_path}")
         
         return message, chart_path

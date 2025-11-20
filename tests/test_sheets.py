@@ -185,7 +185,8 @@ async def test_get_daily_summary_success(mock_sheets_service):
     assert "Daily Summary" in summary_text
     assert "food: 40.50 USD" in summary_text  # 25.50 + 15.00
     assert "transport: 10.00 USD" in summary_text
-    assert "Total spent: 50.50 USD" in summary_text
+    assert "Total spent:" in summary_text
+    assert "- 50.50 USD" in summary_text
     assert "dinner" not in summary_text  # Yesterday's expense should not appear
     assert chart_path is not None  # Chart should be generated
 
@@ -233,7 +234,8 @@ async def test_get_daily_summary_specific_date(mock_sheets_service):
     
     assert f"Daily Summary for {target_date_formatted}" in summary_text
     assert "food: 30.00 EUR" in summary_text
-    assert "Total spent: 30.00 EUR" in summary_text
+    assert "Total spent:" in summary_text
+    assert "- 30.00 EUR" in summary_text
     assert "transport" not in summary_text  # Previous day's expense should not appear
     assert chart_path is not None  # Chart should be generated
 
