@@ -11,8 +11,16 @@ logging.basicConfig(
 # Load environment variables
 load_dotenv('.env')
 
+def env_flag(name: str, default: bool = True) -> bool:
+    """Parse boolean feature flags from the environment."""
+    val = os.getenv(name)
+    if val is None:
+        return default
+    return val.strip().lower() in ('1', 'true', 'yes', 'on')
+
 # Telegram Bot Configuration
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+RUN_TELEGRAM_BOT = env_flag('RUN_TELEGRAM_BOT', True)
 
 # Google Sheets Configuration
 GOOGLE_CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials.json')
