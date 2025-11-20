@@ -33,6 +33,11 @@ pip install -r requirements.txt
 python bot.py
 ```
 
+## Web interface
+- With the bot running, open `http://localhost:8000/expense` to submit expenses through a browser.
+- Paste the same text you would send in Telegram, click **Analyze with AI**, adjust fields if needed, then **Save to Google Sheets** (totals for today are shown after saving).
+- To run the web form without Telegram polling, set `RUN_TELEGRAM_BOT=false` in `.env` before starting `python bot.py`.
+
 ## Testing
 
 The project includes a comprehensive test suite. To run tests:

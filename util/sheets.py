@@ -1,9 +1,12 @@
 import logging
 import os
 from datetime import datetime, timedelta
+
+import matplotlib
+matplotlib.use("Agg")  # Use headless backend to avoid GUI requirements during tests/runs.
+import matplotlib.pyplot as plt
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-import matplotlib.pyplot as plt
 
 from util.config import GOOGLE_CREDENTIALS_PATH, GOOGLE_SHEET_ID, SHEET_NAME, RANGE_NAME, GOOGLE_SCOPES
 
