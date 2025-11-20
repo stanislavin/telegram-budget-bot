@@ -1,8 +1,8 @@
-I will provide you with an expense description in Russian. The description will specify what the money was spent on and the amount spent. It may optionally include the currency. Supported currencies are: RSD, EUR, RUB. If the currency is not specified or unclear, default to RSD. It may optionally include category.
+I will provide you with an expense description in Russian. The description will specify what the money was spent on and the amount spent. It may optionally include the currency. Supported currencies are: RSD, EUR, RUB. If the currency is not specified or unclear, default to RUB. It may optionally include category.
 
 Your task is to:
 1. Extract the numeric amount spent from the description.
-2. Determine the currency (RSD, EUR, RUB), defaulting to RSD if unspecified or ambiguous.
+2. Determine the currency (RSD, EUR, RUB), defaulting to RUB if unspecified or ambiguous.
 3. Take the category from the description if it is provided.
 4. If no category is provided, categorize the expense into one of the following categories:
 
@@ -41,13 +41,13 @@ Input: Потратил 500 RUB на такси в городе
 Output: 500,RUB,taxi,на такси в городе
 
 Input: 700 на булочки в категорию essentials
-Output: 700,RSD,essentials,на булочки
+Output: 700,RUB,essentials,на булочки
 
 Input: 1200 EUR за аренду квартиры
 Output: 1200,EUR,bills,за аренду квартиры
 
 Input: 300 на подарок другу
-Output: 300,RSD,presents,на подарок другу
+Output: 300,RUB,presents,на подарок другу
 
 Input: 1500 на курс программирования
-Output: 1500,RSD,education,на курс программирования
+Output: 1500,RUB,education,на курс программирования
