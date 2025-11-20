@@ -92,8 +92,8 @@ def generate_pie_chart(category_totals, currency, date_str):
     
     return chart_path
 
-async def get_daily_summary(target_date: datetime = None):
-    """Get daily spending summary by category for a specific date."""
+async def get_daily_stats(target_date: datetime = None):
+    """Get daily spending statistics for a specific date."""
     try:
         service = get_google_sheets_service()
         sheet = service.spreadsheets()
@@ -104,7 +104,7 @@ async def get_daily_summary(target_date: datetime = None):
         elif hasattr(target_date, 'date'):
             target_date = target_date.date()
         
-        logger.info(f"Fetching daily summary for {target_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Fetching daily stats for {target_date.strftime('%Y-%m-%d')}")
         
         # Get all data from the sheet
         result = sheet.values().get(
@@ -113,10 +113,8 @@ async def get_daily_summary(target_date: datetime = None):
         ).execute()
         
         values = result.get('values', [])
-        logger.info(f"Retrieved {len(values)} rows from Google Sheets")
         if not values:
-            logger.info("No data found in Google Sheets")
-            return "No expenses found.", None
+            return 0, None, {}
         
         # Group expenses by category for the target date
         category_totals = {}
@@ -128,7 +126,6 @@ async def get_daily_summary(target_date: datetime = None):
                 try:
                     # Parse the timestamp from the sheet
                     timestamp_str = row[0]  # Column A
-                    logger.debug(f"Parsing row {i+2}: timestamp='{timestamp_str}'")
                     
                     # Try multiple date formats
                     timestamp = None
@@ -140,7 +137,6 @@ async def get_daily_summary(target_date: datetime = None):
                             continue
                     
                     if timestamp is None:
-                        logger.error(f"Unable to parse timestamp: {timestamp_str}")
                         continue
                     
                     # Check if the expense is from the target date
@@ -149,8 +145,6 @@ async def get_daily_summary(target_date: datetime = None):
                         category = row[2]  # Column C
                         currency = row[5]  # Column F
                         
-                        logger.debug(f"Matched expense: {amount} {currency} in {category}")
-                        
                         # Add to category total
                         if category in category_totals:
                             category_totals[category] += amount
@@ -158,18 +152,33 @@ async def get_daily_summary(target_date: datetime = None):
                             category_totals[category] = amount
                         
                         total_spent += amount
-                except (ValueError, IndexError) as e:
-                    logger.error(f"Error parsing row {i+2}: {row}, error: {str(e)}")
+                except (ValueError, IndexError):
                     continue
         
-        logger.info(f"Found {len(category_totals)} categories with total spent: {total_spent}")
+        return total_spent, currency, category_totals
+        
+    except Exception as e:
+        logger.error(f"Error fetching daily stats: {str(e)}")
+        raise
+
+async def get_daily_summary(target_date: datetime = None):
+    """Get daily spending summary by category for a specific date."""
+    try:
+        # Use today if no date provided
+        if target_date is None:
+            target_date = datetime.now().date()
+        elif hasattr(target_date, 'date'):
+            target_date = target_date.date()
+            
+        total_spent, currency, category_totals = await get_daily_stats(target_date)
+        
+        formatted_date = target_date.strftime("%d/%m/%Y")
+        
         if not category_totals:
-            formatted_date = target_date.strftime("%d/%m/%Y")
             logger.info(f"No expenses found for {formatted_date}")
             return f"No expenses found for {formatted_date}.", None
         
         # Format the message
-        formatted_date = target_date.strftime("%d/%m/%Y")
         message = f"💰 Daily Summary for {formatted_date}:\n\n"
         
         # Sort categories by amount (highest first)

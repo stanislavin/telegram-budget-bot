@@ -52,12 +52,15 @@ async def test_save_to_sheets_failure(mock_sheets_service):
 @pytest.mark.asyncio
 async def test_get_recent_expenses_success(mock_google_sheets_service):
     """Test successful retrieval of recent expenses."""
-    # Mock the Google Sheets API response
+    # Use dynamic dates relative to today
+    today = datetime.now()
+    yesterday = today - timedelta(days=1)
+    
     mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
         'values': [
             ['timestamp', 'amount', 'category', 'description', '', 'currency'],  # Header
-            ['08/19/2025 23:06:54', '25.50', 'food', 'lunch', '', 'USD'],
-            ['08/18/2025 23:06:54', '10.00', 'transport', 'bus', '', 'EUR']  # Different currency to test total
+            [today.strftime("%m/%d/%Y %H:%M:%S"), '25.50', 'food', 'lunch', '', 'USD'],
+            [yesterday.strftime("%m/%d/%Y %H:%M:%S"), '10.00', 'transport', 'bus', '', 'EUR']  # Different currency to test total
         ]
     }
     
@@ -283,5 +286,6 @@ async def test_get_daily_summary_no_data(mock_sheets_service):
     result = await get_daily_summary()
     summary_text, chart_path = result
     
-    assert summary_text == "No expenses found."
+    today_formatted = datetime.now().strftime("%d/%m/%Y")
+    assert summary_text == f"No expenses found for {today_formatted}."
     assert chart_path is None  # No chart when no data

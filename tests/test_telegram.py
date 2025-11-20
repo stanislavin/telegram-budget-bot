@@ -105,7 +105,8 @@ async def test_handle_message_openrouter_error(mock_process_with_openrouter, moc
 
 @pytest.mark.asyncio
 @patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
-async def test_button_callback_confirm_success(mock_save_to_sheets, mock_update, mock_context):
+@patch('util.telegram.get_daily_stats', new_callable=AsyncMock)
+async def test_button_callback_confirm_success(mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context):
     """Test confirming an expense via button callback."""
     expense_id = "12345-67890"
     pending_expenses[expense_id] = {
@@ -118,13 +119,15 @@ async def test_button_callback_confirm_success(mock_save_to_sheets, mock_update,
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
     mock_save_to_sheets.return_value = (True, None)
     
+    mock_get_daily_stats.return_value = (100.0, 'EUR', {})
+    
     await button_callback(mock_update, mock_context)
     
     mock_update.callback_query.answer.assert_called_once()
     mock_save_to_sheets.assert_called_once_with(75.0, 'EUR', 'Transport', 'Taxi')
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
-    assert calls[1][0][0] == "✅ Saved: 75.0 EUR - Transport - Taxi"
+    assert calls[1][0][0] == "✅ Saved: 75.0 EUR - Transport - Taxi\n\n💸 Total spent today: 100.00 EUR"
     assert expense_id not in pending_expenses
 
 @pytest.mark.asyncio
@@ -236,7 +239,8 @@ async def test_button_callback_back(mock_update, mock_context):
 
 @pytest.mark.asyncio
 @patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
-async def test_auto_confirm_expense_success(mock_save_to_sheets, mock_update, mock_context):
+@patch('util.telegram.get_daily_stats', new_callable=AsyncMock)
+async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context):
     """Test auto-confirmation of an expense."""
     expense_id = "auto-123"
     mock_status_message = AsyncMock()
@@ -249,6 +253,8 @@ async def test_auto_confirm_expense_success(mock_save_to_sheets, mock_update, mo
     }
     mock_save_to_sheets.return_value = (True, None)
     
+    mock_get_daily_stats.return_value = (50.0, 'GBP', {})
+    
     # We need to run this in a separate task as auto_confirm_expense has a sleep
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))
     await asyncio.sleep(10.1) # Wait for the sleep to finish
@@ -256,7 +262,7 @@ async def test_auto_confirm_expense_success(mock_save_to_sheets, mock_update, mo
     
     mock_save_to_sheets.assert_called_once_with(30.0, 'GBP', 'Utilities', 'Electricity bill')
     mock_status_message.edit_text.assert_called_once_with(
-        f"⏱️ Auto-confirmed: 30.0 GBP - Utilities - Electricity bill"
+        f"⏱️ Auto-confirmed: 30.0 GBP - Utilities - Electricity bill\n\n💸 Total spent today: 50.00 GBP"
     )
     assert expense_id not in pending_expenses
 
