@@ -44,12 +44,12 @@ async def process_with_openrouter(message: str) -> tuple:
         category = parts[2]
         description = parts[3]
         
-        # Ensure currency defaults to RSD if not specified or invalid
-        # Only default to RSD if the currency is truly unspecified or invalid
-        # The prompt says to default to RSD if unspecified OR ambiguous
+        # Ensure currency defaults to RUB if not specified or invalid
+        # Only default to RUB if the currency is truly unspecified or invalid
+        # The prompt says to default to RUB if unspecified OR ambiguous
         if currency not in SUPPORTED_CURRENCIES:
-            logger.warning(f"Invalid or ambiguous currency '{currency}' detected, defaulting to RSD")
-            currency = 'RSD'
+            logger.warning(f"Invalid or ambiguous currency '{currency}' detected, defaulting to RUB")
+            currency = 'RUB'
         
         return (amount, currency, category, description), None
         

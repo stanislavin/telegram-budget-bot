@@ -17,11 +17,12 @@ def mock_openrouter_response_no_currency():
         yield mock_post
 
 @pytest.mark.asyncio
-async def test_process_with_openrouter_no_currency_defaults_to_rsd(mock_openrouter_response_no_currency):
-    """Test that when no currency is specified, it defaults to RSD."""
+async def test_process_with_openrouter_no_currency_defaults_to_rub(mock_openrouter_response_no_currency):
+    """Test that when no currency is specified, it defaults to RUB."""
     message = "100 food groceries"
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'RSD', 'Food', 'Groceries')
+    # Should default to RUB
+    assert result == (100.0, 'RUB', 'Food', 'Groceries')
     mock_openrouter_response_no_currency.assert_called_once()
