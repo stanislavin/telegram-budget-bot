@@ -1,16 +1,41 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch, call
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ContextTypes
 import asyncio
 
-from util.telegram import start, help_command, handle_message, button_callback, auto_confirm_expense, pending_expenses, load_categories, CATEGORIES, summary_command
+from util.telegram import (
+    start,
+    help_command,
+    handle_message,
+    button_callback,
+    auto_confirm_expense,
+    pending_expenses,
+    recently_processed_expenses,
+    expense_locks,
+    load_categories,
+    CATEGORIES,
+    summary_command,
+    create_application,
+    start_telegram_polling,
+)
 
 # Mock the CATEGORIES to ensure consistent test results
 @pytest.fixture(autouse=True)
 def mock_categories():
     with patch('util.telegram.CATEGORIES', ['Food', 'Transport', 'Utilities', 'Rent', 'Salary']):
         yield
+
+
+@pytest.fixture(autouse=True)
+def clear_expense_state():
+    pending_expenses.clear()
+    recently_processed_expenses.clear()
+    expense_locks.clear()
+    yield
+    pending_expenses.clear()
+    recently_processed_expenses.clear()
+    expense_locks.clear()
 
 @pytest.fixture
 def mock_update():
@@ -291,6 +316,34 @@ async def test_auto_confirm_expense_failure(mock_save_to_sheets, mock_update, mo
     )
     assert expense_id not in pending_expenses
 
+
+@pytest.mark.asyncio
+@patch('util.telegram.asyncio.sleep', new_callable=AsyncMock)
+async def test_auto_confirm_no_pending_expense(mock_sleep, mock_context):
+    """Auto-confirm should exit early if expense is missing."""
+    mock_sleep.return_value = None
+    await auto_confirm_expense("missing-id", mock_context)
+    mock_sleep.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_button_callback_after_auto_processing(mock_update, mock_context):
+    """Late button presses should reuse the final text instead of erroring."""
+    expense_id = "processed-123"
+    processed_text = "⏱️ Auto-confirmed: 10 USD - Food - Snack"
+    recently_processed_expenses[expense_id] = processed_text
+    mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.text = processed_text
+
+    await button_callback(mock_update, mock_context)
+
+    expired_calls = [
+        call for call in mock_update.callback_query.edit_message_text.call_args_list
+        if "expired" in call[0][0]
+    ]
+    assert not expired_calls
+
 @pytest.mark.asyncio
 async def test_handle_message_add_expense_button(mock_update, mock_context):
     """Test '💰 Add Expense' button handling."""
@@ -339,6 +392,22 @@ async def test_summary_command(mock_get_daily_summary, mock_update, mock_context
     mock_get_daily_summary.assert_called_once()
     mock_update.message.reply_text.assert_any_call("Daily summary data")
 
+
+@pytest.mark.asyncio
+@patch('util.telegram.get_daily_summary', new_callable=AsyncMock)
+async def test_summary_command_with_chart(mock_get_daily_summary, mock_update, mock_context, tmp_path):
+    """Test /summary when a chart file is returned."""
+    chart_path = tmp_path / "summary.png"
+    chart_path.write_text("chart-bytes")
+    mock_get_daily_summary.return_value = ("Chart summary", str(chart_path))
+    mock_update.message.reply_photo = AsyncMock()
+
+    await summary_command(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_any_call("🔄 Calculating today's expenses...")
+    mock_update.message.reply_photo.assert_awaited_once()
+    assert not chart_path.exists()
+
 @pytest.mark.asyncio
 @patch('util.telegram.get_daily_summary', new_callable=AsyncMock)
 async def test_handle_message_todays_summary_button(mock_get_daily_summary, mock_update, mock_context):
@@ -350,9 +419,50 @@ async def test_handle_message_todays_summary_button(mock_get_daily_summary, mock
     mock_get_daily_summary.assert_called_once()
     mock_update.message.reply_text.assert_any_call("Today's summary data")
 
+
+@pytest.mark.asyncio
+@patch('util.telegram.get_daily_summary', new_callable=AsyncMock)
+async def test_handle_message_todays_summary_with_chart(mock_get_daily_summary, mock_update, mock_context, tmp_path):
+    """Test summary button when a chart is available."""
+    chart_path = tmp_path / "summary.png"
+    chart_path.write_text("chart")
+    mock_update.message.text = "💸 Today's Summary"
+    mock_update.message.reply_photo = AsyncMock()
+    mock_get_daily_summary.return_value = ("Summary with chart", str(chart_path))
+
+    await handle_message(mock_update, mock_context)
+
+    mock_update.message.reply_photo.assert_awaited_once()
+    assert not chart_path.exists()
+
 @pytest.mark.asyncio
 @patch('util.telegram.start_daily_summary_scheduler')
 async def test_start_command_scheduler(mock_scheduler, mock_update, mock_context):
     """Test that /start command initializes the daily summary scheduler."""
     await start(mock_update, mock_context)
     mock_scheduler.assert_called_once_with('12345', mock_context, 'UTC')
+
+
+def test_create_application_registers_handlers():
+    """Ensure create_application wires handlers and returns application."""
+    mock_builder = MagicMock()
+    mock_application = MagicMock()
+    mock_builder.token.return_value = mock_builder
+    mock_builder.build.return_value = mock_application
+
+    with patch('util.telegram.Application.builder', return_value=mock_builder):
+        app = create_application()
+
+    mock_builder.token.assert_called_once()
+    assert mock_application.add_handler.call_count >= 4
+    assert app is mock_application
+
+
+def test_start_telegram_polling_runs():
+    """Ensure polling starts via run_polling."""
+    mock_application = MagicMock()
+    with patch('util.telegram.create_application', return_value=mock_application):
+        app = start_telegram_polling()
+
+    mock_application.run_polling.assert_called_once_with(allowed_updates=Update.ALL_TYPES)
+    assert app is mock_application

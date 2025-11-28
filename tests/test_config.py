@@ -44,6 +44,13 @@ def test_default_values():
     assert config.OPENROUTER_URL == "https://openrouter.ai/api/v1/chat/completions"
 
 
+def test_env_flag_parses_boolean_values():
+    """env_flag should honor truthy and falsy strings."""
+    from util import config
+    with patch.dict(os.environ, {'RUN_TELEGRAM_BOT': 'off'}):
+        assert config.env_flag('RUN_TELEGRAM_BOT', True) is False
+
+
 def test_openrouter_url_constant():
     """Test that OpenRouter URL is set correctly."""
     from util import config

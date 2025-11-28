@@ -13,6 +13,22 @@ logger = logging.getLogger(__name__)
 
 # Store pending expenses
 pending_expenses = {}
+recently_processed_expenses = {}
+expense_locks = {}
+PROCESSED_EXPENSE_TTL_SECONDS = 30
+
+
+async def _cleanup_processed_expense(expense_id: str):
+    """Drop processed state after a short retention window."""
+    await asyncio.sleep(PROCESSED_EXPENSE_TTL_SECONDS)
+    recently_processed_expenses.pop(expense_id, None)
+    expense_locks.pop(expense_id, None)
+
+
+def _remember_processed_expense(expense_id: str, final_text: str):
+    """Remember processed expenses briefly to handle late button presses gracefully."""
+    recently_processed_expenses[expense_id] = final_text
+    asyncio.create_task(_cleanup_processed_expense(expense_id))
 
 # Load categories from prompt
 def load_categories():
@@ -80,39 +96,41 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
     """Automatically confirm an expense after 10 seconds if no user action."""
     await asyncio.sleep(10)  # Wait for 10 seconds
     
-    expense_data = pending_expenses.pop(expense_id, None)
-    if not expense_data:
-        return
-    
-    # Get the status message
-    status_message = expense_data['status_message']
-    
-    # Save to sheets
-    success, error = await save_to_sheets(
-        expense_data['amount'],
-        expense_data['currency'],
-        expense_data['category'],
-        expense_data['description']
-    )
-    
-    if success:
-        # Get daily stats
-        currency_totals, _ = await get_daily_stats()
+    lock = expense_locks.setdefault(expense_id, asyncio.Lock())
+    async with lock:
+        expense_data = pending_expenses.pop(expense_id, None)
+        if not expense_data:
+            return
         
-        # Format totals
-        totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+        # Get the status message
+        status_message = expense_data['status_message']
         
-        await status_message.edit_text(
-            f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
-            f"{expense_data['category']} - {expense_data['description']}\n\n"
-            f"💸 Total spent today: {totals_str}"
+        # Save to sheets
+        success, error = await save_to_sheets(
+            expense_data['amount'],
+            expense_data['currency'],
+            expense_data['category'],
+            expense_data['description']
         )
-    else:
-        await status_message.edit_text(f"❌ Error auto-saving to spreadsheet: {error}")
-    
-    # Clean up
-    if expense_id in pending_expenses:
-        del pending_expenses[expense_id]
+        
+        if success:
+            # Get daily stats
+            currency_totals, _ = await get_daily_stats()
+            
+            # Format totals
+            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+            
+            final_text = (
+                f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
+                f"{expense_data['category']} - {expense_data['description']}\n\n"
+                f"💸 Total spent today: {totals_str}"
+            )
+            await status_message.edit_text(final_text)
+        else:
+            final_text = f"❌ Error auto-saving to spreadsheet: {error}"
+            await status_message.edit_text(final_text)
+        
+        _remember_processed_expense(expense_id, final_text)
 
 async def show_category_buttons(expense_id: str, current_category: str):
     """Show category selection buttons."""
@@ -152,101 +170,114 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = parse_callback_data(query.data)
     action = data.get('action')
     expense_id = data.get('id')
-    expense_data = pending_expenses.get(expense_id)
-    
-    if not expense_data:
-        await query.edit_message_text("❌ This expense has expired or was already processed.")
-        return
-    
-    if action == 'confirm':
-        await query.edit_message_text("💾 Saving to spreadsheet...")
-        success, error = await save_to_sheets(
-            expense_data['amount'],
-            expense_data['currency'],
-            expense_data['category'],
-            expense_data['description']
-        )
+    lock = expense_locks.setdefault(expense_id, asyncio.Lock())
+    async with lock:
+        expense_data = pending_expenses.get(expense_id)
+        processed_text = recently_processed_expenses.get(expense_id)
         
-        if success:
-            # Get daily stats
-            currency_totals, _ = await get_daily_stats()
+        if not expense_data:
+            if processed_text:
+                current_text = getattr(getattr(query, "message", None), "text", "")
+                if current_text != processed_text:
+                    await query.edit_message_text(processed_text)
+                else:
+                    await query.answer("This expense was already processed.")
+            else:
+                await query.edit_message_text("❌ This expense has expired or was already processed.")
+            return
+        
+        if action == 'confirm':
+            await query.edit_message_text("💾 Saving to spreadsheet...")
+            success, error = await save_to_sheets(
+                expense_data['amount'],
+                expense_data['currency'],
+                expense_data['category'],
+                expense_data['description']
+            )
             
-            # Format totals
-            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+            if success:
+                # Get daily stats
+                currency_totals, _ = await get_daily_stats()
+                
+                # Format totals
+                totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+                
+                final_text = (
+                    f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+                    f"{expense_data['category']} - {expense_data['description']}\n\n"
+                    f"💸 Total spent today: {totals_str}"
+                )
+            else:
+                final_text = f"❌ Error saving to spreadsheet: {error}"
+
+            await query.edit_message_text(final_text)
+
+            # Clean up regardless of success or failure as the button action has been processed
+            pending_expenses.pop(expense_id, None)
+            _remember_processed_expense(expense_id, final_text)
+                
+        elif action == 'cancel':
+            final_text = "Expense cancelled."
+            await query.edit_message_text(final_text)
+            pending_expenses.pop(expense_id, None)
+            _remember_processed_expense(expense_id, final_text)
+        
+        elif action == 'change_category':
+            # Show category selection buttons
+            reply_markup = await show_category_buttons(expense_id, expense_data['category'])
+            await query.edit_message_text(
+                f"📊 Select a new category for:\n"
+                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+                f"Current category: {expense_data['category']}\n"
+                f"Description: {expense_data['description']}",
+                reply_markup=reply_markup
+            )
+        
+        elif action == 'select_category':
+            # Update the category
+            new_category = data.get('category')
+            expense_data['category'] = new_category
+            
+            # Show the main confirmation buttons again
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
             await query.edit_message_text(
-                f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-                f"{expense_data['category']} - {expense_data['description']}\n\n"
-                f"💸 Total spent today: {totals_str}"
+                f"📊 Please confirm the expense:\n"
+                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+                f"Category: {expense_data['category']}\n"
+                f"Description: {expense_data['description']}",
+                reply_markup=reply_markup
             )
-        else:
-            await query.edit_message_text(f"❌ Error saving to spreadsheet: {error}")
-
-        # Clean up regardless of success or failure as the button action has been processed
-        if expense_id in pending_expenses:
-            del pending_expenses[expense_id]
+        
+        elif action == 'back':
+            # Show the main confirmation buttons again
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
-    elif action == 'cancel':
-        await query.edit_message_text("Expense cancelled.")
-        if expense_id in pending_expenses:
-            del pending_expenses[expense_id]
-    
-    elif action == 'change_category':
-        # Show category selection buttons
-        reply_markup = await show_category_buttons(expense_id, expense_data['category'])
-        await query.edit_message_text(
-            f"📊 Select a new category for:\n"
-            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-            f"Current category: {expense_data['category']}\n"
-            f"Description: {expense_data['description']}",
-            reply_markup=reply_markup
-        )
-    
-    elif action == 'select_category':
-        # Update the category
-        new_category = data.get('category')
-        expense_data['category'] = new_category
-        
-        # Show the main confirmation buttons again
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-            ],
-            [
-                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"📊 Please confirm the expense:\n"
-            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-            f"Category: {expense_data['category']}\n"
-            f"Description: {expense_data['description']}",
-            reply_markup=reply_markup
-        )
-    
-    elif action == 'back':
-        # Show the main confirmation buttons again
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-            ],
-            [
-                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            f"📊 Please confirm the expense:\n"
-            f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-            f"Category: {expense_data['category']}\n"
-            f"Description: {expense_data['description']}",
-            reply_markup=reply_markup
-        )
+            await query.edit_message_text(
+                f"📊 Please confirm the expense:\n"
+                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+                f"Category: {expense_data['category']}\n"
+                f"Description: {expense_data['description']}",
+                reply_markup=reply_markup
+            )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
