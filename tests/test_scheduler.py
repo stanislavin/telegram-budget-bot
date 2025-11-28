@@ -45,6 +45,24 @@ async def test_send_daily_summary_success(mock_get_daily_summary, mock_context):
 
 @pytest.mark.asyncio
 @patch('util.scheduler.get_daily_summary', new_callable=AsyncMock)
+async def test_send_daily_summary_with_chart_cleanup(mock_get_daily_summary, mock_context, tmp_path):
+    """Test sending summary with chart and cleanup."""
+    chart_path = tmp_path / "chart.png"
+    chart_path.write_text("chart-bytes")
+    mock_get_daily_summary.return_value = ("Summary with chart", str(chart_path))
+    mock_context.bot.send_photo = AsyncMock()
+
+    scheduler = DailySummaryScheduler()
+    scheduler.add_chat("12345", "UTC")
+
+    await scheduler.send_daily_summary_to_all(mock_context)
+
+    mock_context.bot.send_photo.assert_called_once()
+    assert not chart_path.exists()
+
+
+@pytest.mark.asyncio
+@patch('util.scheduler.get_daily_summary', new_callable=AsyncMock)
 async def test_send_daily_summary_failure(mock_get_daily_summary, mock_context):
     """Test handling of daily summary send failure."""
     mock_get_daily_summary.side_effect = Exception("Test error")

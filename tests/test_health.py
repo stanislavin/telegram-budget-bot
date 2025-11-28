@@ -1,11 +1,11 @@
 import pytest
 import requests
 import time
-from unittest.mock import MagicMock, patch, Mock
+from unittest.mock import MagicMock, patch, Mock, AsyncMock
 from threading import Thread
 from flask import Flask
 
-from util.health import start_health_check, nudge_pinger, start_nudge
+from util.health import start_health_check, nudge_pinger, start_nudge, build_app
 
 
 @pytest.fixture
@@ -211,3 +211,63 @@ def test_start_health_check_configuration(mock_flask_app, mock_thread):
     # Note: We can't directly test app.run since it's called in a thread,
     # but we can verify the configuration is passed correctly
     mock_thread.start.assert_called_once()
+
+
+@patch('util.health.process_with_openrouter', new_callable=AsyncMock)
+def test_expense_form_parse_success(mock_process):
+    """Ensure /expense parse branch renders parsed data."""
+    mock_process.return_value = ((12.5, "USD", "travel", "train"), None)
+    app = build_app()
+    app.config['TESTING'] = True
+
+    with app.test_client() as client:
+        resp = client.post('/expense', data={
+            'action': 'parse',
+            'message': 'booked train'
+        })
+
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Parsed by AI" in html
+    assert "travel" in html
+
+
+@patch('util.health.get_daily_stats', new_callable=AsyncMock)
+@patch('util.health.save_to_sheets', new_callable=AsyncMock)
+def test_expense_form_save_success(mock_save, mock_stats):
+    """Ensure /expense save branch records data and shows totals."""
+    mock_save.return_value = (True, None)
+    mock_stats.return_value = ({"USD": 99.0}, {})
+    app = build_app()
+    app.config['TESTING'] = True
+
+    with app.test_client() as client:
+        resp = client.post('/expense', data={
+            'action': 'save',
+            'message': '12 usd travel train',
+            'amount': '12',
+            'currency': 'usd',
+            'category': 'travel',
+            'description': 'train'
+        })
+
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Saved 12.00 USD" in html
+    assert "99.00 USD" in html
+
+
+def test_expense_form_missing_message():
+    """Validate that parse requests require a message."""
+    app = build_app()
+    app.config['TESTING'] = True
+
+    with app.test_client() as client:
+        resp = client.post('/expense', data={
+            'action': 'parse',
+            'message': ''
+        })
+
+    html = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    assert "Please provide the expense text" in html
