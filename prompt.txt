@@ -14,6 +14,7 @@ Your task is to:
    - health (e.g., doctor visits, medicine, excluding insurance)
    - home (e.g., furniture, repairs, decorations)
    - presents (e.g., gifts for others)
+   - toys (e.g., children's toys, games for kids)
    - services (includes subscriptions like streaming or software)
    - sport (e.g., gym, sports equipment, coach)
    - taxi (e.g., cab rides, ride-sharing)
