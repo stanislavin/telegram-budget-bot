@@ -226,3 +226,15 @@ def test_multiple_prompt_loads_different_content():
     
     # Results should be different
     assert result1 != result2
+
+
+def test_prompt_includes_toys_category():
+    """Prompt should list the toys category for expense classification."""
+    from util import config
+    original_prompt = config._LLM_PROMPT
+    config._LLM_PROMPT = None
+    try:
+        prompt = get_llm_prompt()
+        assert "toys" in prompt.lower()
+    finally:
+        config._LLM_PROMPT = original_prompt
