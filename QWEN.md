@@ -4,6 +4,8 @@ This project was developed with the assistance of Qwen Code, an AI coding assist
 
 For more information, visit [Qwen Code](https://www.qwenlm.ai/).
 
+**Last Updated:** Wednesday, December 17, 2025
+
 ## Project Overview
 
 This Telegram Budget Bot is a comprehensive expense tracking solution that integrates with Google Sheets for data storage. The bot processes natural language expense descriptions using AI (OpenRouter API) to categorize and format expenses before saving them to a spreadsheet.
