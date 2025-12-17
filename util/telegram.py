@@ -5,8 +5,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt
-from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats
-from util.openrouter import process_with_openrouter
+from util.sheets import save_to_sheets, save_to_sheets_with_retry, get_recent_expenses, get_daily_summary, get_daily_stats
+from util.openrouter import process_with_openrouter, process_with_openrouter_with_retry
 from util.scheduler import start_daily_summary_scheduler
 
 logger = logging.getLogger(__name__)
@@ -95,31 +95,31 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Automatically confirm an expense after 10 seconds if no user action."""
     await asyncio.sleep(10)  # Wait for 10 seconds
-    
+
     lock = expense_locks.setdefault(expense_id, asyncio.Lock())
     async with lock:
         expense_data = pending_expenses.pop(expense_id, None)
         if not expense_data:
             return
-        
+
         # Get the status message
         status_message = expense_data['status_message']
-        
-        # Save to sheets
-        success, error = await save_to_sheets(
+
+        # Save to sheets with retry
+        success, error = await save_to_sheets_with_retry(
             expense_data['amount'],
             expense_data['currency'],
             expense_data['category'],
             expense_data['description']
         )
-        
+
         if success:
             # Get daily stats
             currency_totals, _ = await get_daily_stats()
-            
+
             # Format totals
             totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
-            
+
             final_text = (
                 f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
                 f"{expense_data['category']} - {expense_data['description']}\n\n"
@@ -129,7 +129,12 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
         else:
             final_text = f"❌ Error auto-saving to spreadsheet: {error}"
             await status_message.edit_text(final_text)
-        
+
+            # Add manual retry button
+            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await status_message.edit_reply_markup(reply_markup=reply_markup)
+
         _remember_processed_expense(expense_id, final_text)
 
 async def show_category_buttons(expense_id: str, current_category: str):
@@ -188,20 +193,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if action == 'confirm':
             await query.edit_message_text("💾 Saving to spreadsheet...")
-            success, error = await save_to_sheets(
+            success, error = await save_to_sheets_with_retry(
                 expense_data['amount'],
                 expense_data['currency'],
                 expense_data['category'],
                 expense_data['description']
             )
-            
+
             if success:
                 # Get daily stats
                 currency_totals, _ = await get_daily_stats()
-                
+
                 # Format totals
                 totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
-                
+
                 final_text = (
                     f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
                     f"{expense_data['category']} - {expense_data['description']}\n\n"
@@ -209,6 +214,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
             else:
                 final_text = f"❌ Error saving to spreadsheet: {error}"
+
+                # Add manual retry button for failed saves
+                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
 
             await query.edit_message_text(final_text)
 
@@ -270,7 +280,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            
+
             await query.edit_message_text(
                 f"📊 Please confirm the expense:\n"
                 f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
@@ -278,11 +288,109 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Description: {expense_data['description']}",
                 reply_markup=reply_markup
             )
+        elif action == 'manual_sheet_retry':
+            # Handle manual retry for saving to Google Sheets
+            await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
+
+            # Retrieve expense data from the stored pending expense if still available
+            expense_data = pending_expenses.get(expense_id)
+            if not expense_data:
+                # If expense is not in pending (e.g. from auto-confirm), use the original data from context
+                await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
+                return
+
+            # Retry saving to sheets
+            success, error = await save_to_sheets_with_retry(
+                expense_data['amount'],
+                expense_data['currency'],
+                expense_data['category'],
+                expense_data['description']
+            )
+
+            if success:
+                # Get daily stats
+                currency_totals, _ = await get_daily_stats()
+
+                # Format totals
+                totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+
+                final_text = (
+                    f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+                    f"{expense_data['category']} - {expense_data['description']}\n\n"
+                    f"💸 Total spent today: {totals_str}"
+                )
+            else:
+                final_text = f"❌ Error saving to spreadsheet: {error}"
+
+                # Show retry button again if it still fails
+                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
+
+            await query.edit_message_text(final_text)
+
+            # Clean up regardless of success or failure as the button action has been processed
+            pending_expenses.pop(expense_id, None)
+            _remember_processed_expense(expense_id, final_text)
+        elif data.get('action') == 'manual_openrouter_retry':
+            # Handle manual retry for OpenRouter API call
+            original_message = update.effective_message.text
+            if not original_message:
+                await query.edit_message_text("❌ Unable to retry: original message not found.")
+                return
+
+            await query.edit_message_text("🔄 Retrying OpenRouter API call...")
+
+            # Process message with OpenRouter - with retry
+            processed_data, error = await process_with_openrouter_with_retry(original_message)
+
+            if error:
+                await query.edit_message_text(f"❌ Error: {error}")
+                # Add manual retry button again
+                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data="manual_openrouter_retry")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await query.edit_message_reply_markup(reply_markup=reply_markup)
+                return
+
+            amount, currency, category, description = processed_data
+
+            # Store the expense data for confirmation
+            expense_id = f"{update.effective_message.chat_id}-{update.effective_message.message_id}"
+            pending_expenses[expense_id] = {
+                'amount': amount,
+                'currency': currency,
+                'category': category,
+                'description': description,
+                'status_message': query.message
+            }
+
+            # Create confirmation buttons
+            keyboard = [
+                [
+                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+                ],
+                [
+                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
+            await query.edit_message_text(
+                f"📊 Please confirm the expense (auto-confirms in 10s):\n"
+                f"Amount: {amount} {currency}\n"
+                f"Category: {category}\n"
+                f"Description: {description}",
+                reply_markup=reply_markup
+            )
+
+            # Start auto-confirmation timer
+            asyncio.create_task(auto_confirm_expense(expense_id, context))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
     message = update.message.text
-    
+
     # Handle command keyboard buttons
     if message == "💰 Add Expense":
         await update.message.reply_text(
@@ -306,7 +414,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
         summary_text, chart_path = await get_daily_summary()
-        
+
         if chart_path and os.path.exists(chart_path):
             # Send the chart image
             await update.message.reply_photo(photo=open(chart_path, 'rb'), caption=summary_text)
@@ -319,21 +427,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
         return
-    
+
     # Process regular expense messages
     # Send initial message and store it for updates
     status_message = await update.message.reply_text("🔄 Processing your expense...")
-    
-    # Process message with OpenRouter
+
+    # Process message with OpenRouter - with retry
     await status_message.edit_text("🤖 Analyzing your expense with AI...")
-    processed_data, error = await process_with_openrouter(message)
-    
+    processed_data, error = await process_with_openrouter_with_retry(message)
+
     if error:
         await status_message.edit_text(f"❌ Error: {error}")
+        # Add manual retry button for OpenRouter failures
+        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data="manual_openrouter_retry")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await status_message.edit_reply_markup(reply_markup=reply_markup)
         return
-    
+
     amount, currency, category, description = processed_data
-    
+
     # Store the expense data for confirmation
     expense_id = f"{update.message.chat_id}-{update.message.message_id}"
     pending_expenses[expense_id] = {
@@ -343,7 +455,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'description': description,
         'status_message': status_message
     }
-    
+
     # Create confirmation buttons
     keyboard = [
         [
@@ -355,7 +467,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
+
     await status_message.edit_text(
         f"📊 Please confirm the expense (auto-confirms in 10s):\n"
         f"Amount: {amount} {currency}\n"
@@ -363,7 +475,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Description: {description}",
         reply_markup=reply_markup
     )
-    
+
     # Start auto-confirmation timer
     asyncio.create_task(auto_confirm_expense(expense_id, context))
 

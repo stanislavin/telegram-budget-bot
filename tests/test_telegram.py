@@ -78,60 +78,66 @@ async def test_help_command(mock_update, mock_context):
     assert isinstance(kwargs['reply_markup'], ReplyKeyboardMarkup)
 
 @pytest.mark.asyncio
-@patch('util.telegram.process_with_openrouter', new_callable=AsyncMock)
-@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+@patch('util.telegram.process_with_openrouter_with_retry', new_callable=AsyncMock)
+@patch('util.telegram.save_to_sheets_with_retry', new_callable=AsyncMock)
 @patch('asyncio.create_task')
-async def test_handle_message_expense(mock_create_task, mock_save_to_sheets, mock_process_with_openrouter, mock_update, mock_context):
+async def test_handle_message_expense(mock_create_task, mock_save_to_sheets_with_retry, mock_process_with_openrouter_with_retry, mock_update, mock_context):
     """Test handling of a regular expense message."""
     mock_update.message.text = "50 USD food lunch"
-    mock_process_with_openrouter.return_value = ((50.0, "USD", "Food", "lunch"), None)
-    
+    mock_process_with_openrouter_with_retry.return_value = ((50.0, "USD", "Food", "lunch"), None)
+
     # Mock the status message returned by reply_text
     mock_status_message = AsyncMock()
     mock_update.message.reply_text.return_value = mock_status_message
 
     await handle_message(mock_update, mock_context)
-    
+
     mock_update.message.reply_text.assert_called_once_with("🔄 Processing your expense...")
-    mock_process_with_openrouter.assert_called_once_with("50 USD food lunch")
-    
+    mock_process_with_openrouter_with_retry.assert_called_once_with("50 USD food lunch")
+
     expense_id = f"{mock_update.message.chat_id}-{mock_update.message.message_id}"
     assert expense_id in pending_expenses
     assert pending_expenses[expense_id]['amount'] == 50.0
-    
+
     # Check that edit_text was called with AI analysis message
     edit_calls = mock_status_message.edit_text.call_args_list
     assert any("🤖 Analyzing your expense with AI..." in str(call) for call in edit_calls)
-    
-    # Check that the final confirmation message was sent  
+
+    # Check that the final confirmation message was sent
     final_call = edit_calls[-1]
     final_text = final_call[0][0]
     assert "📊 Please confirm the expense (auto-confirms in 10s):" in final_text
     assert "Amount: 50.0 USD" in final_text
     assert "Category: Food" in final_text
     assert "Description: lunch" in final_text
-    
+
     mock_create_task.assert_called_once()
 
 @pytest.mark.asyncio
-@patch('util.telegram.process_with_openrouter', new_callable=AsyncMock)
-async def test_handle_message_openrouter_error(mock_process_with_openrouter, mock_update, mock_context):
+@patch('util.telegram.process_with_openrouter_with_retry', new_callable=AsyncMock)
+async def test_handle_message_openrouter_error(mock_process_with_openrouter_with_retry, mock_update, mock_context):
     """Test handling of an OpenRouter error during message processing."""
     mock_update.message.text = "invalid message"
-    mock_process_with_openrouter.return_value = (None, "OpenRouter API error")
-    
+    # The new function returns a more specific error message
+    mock_process_with_openrouter_with_retry.return_value = (None, "Error processing with OpenRouter after retry: OpenRouter API error")
+
     mock_status_message = AsyncMock()
     mock_update.message.reply_text.return_value = mock_status_message
 
     await handle_message(mock_update, mock_context)
-    
-    mock_status_message.edit_text.assert_any_call("❌ Error: OpenRouter API error")
-    assert not pending_expenses # No expense should be pending on error
+
+    # Check that the error message is in the calls
+    expected_error = "❌ Error: Error processing with OpenRouter after retry: OpenRouter API error"
+    # Extract the actual arguments passed to edit_text
+    actual_calls = [call_args[0] for call_args in mock_status_message.edit_text.call_args_list if call_args and len(call_args) > 0]
+    # Check if the expected error text is in any of the actual calls
+    assert any(expected_error in actual_call for actual_call in actual_calls), f"Expected '{expected_error}' in actual calls: {actual_calls}"
+    assert not pending_expenses  # No expense should be pending on error
 
 @pytest.mark.asyncio
-@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+@patch('util.telegram.save_to_sheets_with_retry', new_callable=AsyncMock)
 @patch('util.telegram.get_daily_stats', new_callable=AsyncMock)
-async def test_button_callback_confirm_success(mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context):
+async def test_button_callback_confirm_success(mock_get_daily_stats, mock_save_to_sheets_with_retry, mock_update, mock_context):
     """Test confirming an expense via button callback."""
     expense_id = "12345-67890"
     pending_expenses[expense_id] = {
@@ -142,22 +148,22 @@ async def test_button_callback_confirm_success(mock_get_daily_stats, mock_save_t
         'status_message': AsyncMock()
     }
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
-    mock_save_to_sheets.return_value = (True, None)
-    
+    mock_save_to_sheets_with_retry.return_value = (True, None)
+
     mock_get_daily_stats.return_value = ({'EUR': 100.0}, {})
-    
+
     await button_callback(mock_update, mock_context)
-    
+
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, 'EUR', 'Transport', 'Taxi')
+    mock_save_to_sheets_with_retry.assert_called_once_with(75.0, 'EUR', 'Transport', 'Taxi')
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
     assert calls[1][0][0] == "✅ Saved: 75.0 EUR - Transport - Taxi\n\n💸 Total spent today: 100.00 EUR"
     assert expense_id not in pending_expenses
 
 @pytest.mark.asyncio
-@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
-async def test_button_callback_confirm_failure(mock_save_to_sheets, mock_update, mock_context):
+@patch('util.telegram.save_to_sheets_with_retry', new_callable=AsyncMock)
+async def test_button_callback_confirm_failure(mock_save_to_sheets_with_retry, mock_update, mock_context):
     """Test confirming an expense with save failure via button callback."""
     expense_id = "12345-67890"
     pending_expenses[expense_id] = {
@@ -168,12 +174,15 @@ async def test_button_callback_confirm_failure(mock_save_to_sheets, mock_update,
         'status_message': AsyncMock()
     }
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
-    mock_save_to_sheets.return_value = (False, "Sheets error")
-    
+    mock_save_to_sheets_with_retry.return_value = (False, "Sheets error")
+
+    # Mock the edit_message_reply_markup method as well since it's called when there's an error
+    mock_update.callback_query.edit_message_reply_markup = AsyncMock()
+
     await button_callback(mock_update, mock_context)
-    
+
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, 'EUR', 'Transport', 'Taxi')
+    mock_save_to_sheets_with_retry.assert_called_once_with(75.0, 'EUR', 'Transport', 'Taxi')
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
     assert calls[1][0][0] == "❌ Error saving to spreadsheet: Sheets error"
@@ -263,9 +272,9 @@ async def test_button_callback_back(mock_update, mock_context):
     assert isinstance(kwargs['reply_markup'], InlineKeyboardMarkup)
 
 @pytest.mark.asyncio
-@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+@patch('util.telegram.save_to_sheets_with_retry', new_callable=AsyncMock)
 @patch('util.telegram.get_daily_stats', new_callable=AsyncMock)
-async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context):
+async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_sheets_with_retry, mock_update, mock_context):
     """Test auto-confirmation of an expense."""
     expense_id = "auto-123"
     mock_status_message = AsyncMock()
@@ -276,24 +285,24 @@ async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_s
         'description': 'Electricity bill',
         'status_message': mock_status_message
     }
-    mock_save_to_sheets.return_value = (True, None)
-    
+    mock_save_to_sheets_with_retry.return_value = (True, None)
+
     mock_get_daily_stats.return_value = ({'GBP': 50.0}, {})
-    
+
     # We need to run this in a separate task as auto_confirm_expense has a sleep
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))
     await asyncio.sleep(10.1) # Wait for the sleep to finish
     await task # Ensure the task completes
-    
-    mock_save_to_sheets.assert_called_once_with(30.0, 'GBP', 'Utilities', 'Electricity bill')
+
+    mock_save_to_sheets_with_retry.assert_called_once_with(30.0, 'GBP', 'Utilities', 'Electricity bill')
     mock_status_message.edit_text.assert_called_once_with(
         f"⏱️ Auto-confirmed: 30.0 GBP - Utilities - Electricity bill\n\n💸 Total spent today: 50.00 GBP"
     )
     assert expense_id not in pending_expenses
 
 @pytest.mark.asyncio
-@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
-async def test_auto_confirm_expense_failure(mock_save_to_sheets, mock_update, mock_context):
+@patch('util.telegram.save_to_sheets_with_retry', new_callable=AsyncMock)
+async def test_auto_confirm_expense_failure(mock_save_to_sheets_with_retry, mock_update, mock_context):
     """Test auto-confirmation failure."""
     expense_id = "auto-456"
     mock_status_message = AsyncMock()
@@ -304,13 +313,13 @@ async def test_auto_confirm_expense_failure(mock_save_to_sheets, mock_update, mo
         'description': 'Monthly rent',
         'status_message': mock_status_message
     }
-    mock_save_to_sheets.return_value = (False, "Auto-save error")
-    
+    mock_save_to_sheets_with_retry.return_value = (False, "Auto-save error")
+
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))
     await asyncio.sleep(10.1)
     await task
-    
-    mock_save_to_sheets.assert_called_once_with(40.0, 'JPY', 'Rent', 'Monthly rent')
+
+    mock_save_to_sheets_with_retry.assert_called_once_with(40.0, 'JPY', 'Rent', 'Monthly rent')
     mock_status_message.edit_text.assert_called_once_with(
         f"❌ Error auto-saving to spreadsheet: Auto-save error"
     )

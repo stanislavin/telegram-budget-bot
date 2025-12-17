@@ -1,5 +1,6 @@
 import logging
 import os
+import asyncio
 from datetime import datetime, timedelta
 
 import matplotlib
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 def get_google_sheets_service():
     """Initialize and return Google Sheets service."""
-    
+
     try:
         creds = service_account.Credentials.from_service_account_file(
             GOOGLE_CREDENTIALS_PATH, scopes=GOOGLE_SCOPES)
@@ -29,10 +30,10 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
     try:
         service = get_google_sheets_service()
         sheet = service.spreadsheets()
-        
+
         # Format timestamp as YYYY-MM-DD HH:MM:SS
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         # Prepare the row data with specific column layout
         row = [
             timestamp,      # Column A - timestamp
@@ -42,11 +43,11 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
             "",           # Column E - empty
             currency      # Column F - currency
         ]
-        
+
         body = {
             'values': [row]
         }
-        
+
         # Append the row to the sheet
         result = sheet.values().append(
             spreadsheetId=GOOGLE_SHEET_ID,
@@ -55,10 +56,87 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
             insertDataOption='INSERT_ROWS',
             body=body
         ).execute()
-        
+
         return True, None
     except Exception as e:
         return False, str(e)
+
+
+async def save_to_sheets_with_retry(amount: float, currency: str, category: str, description: str):
+    """Save the expense to Google Sheets with retry logic."""
+    try:
+        service = get_google_sheets_service()
+        sheet = service.spreadsheets()
+
+        # Format timestamp as YYYY-MM-DD HH:MM:SS
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        # Prepare the row data with specific column layout
+        row = [
+            timestamp,      # Column A - timestamp
+            amount,        # Column B - amount
+            category,      # Column C - category
+            description,   # Column D - description
+            "",           # Column E - empty
+            currency      # Column F - currency
+        ]
+
+        body = {
+            'values': [row]
+        }
+
+        # Append the row to the sheet
+        result = sheet.values().append(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            range=RANGE_NAME,
+            valueInputOption='USER_ENTERED',
+            insertDataOption='INSERT_ROWS',
+            body=body
+        ).execute()
+
+        return True, None
+
+    except Exception as e:
+        logger.warning(f"Google Sheets API request failed: {str(e)}, retrying in 10 seconds...")
+
+        # Wait 10 seconds before retry
+        await asyncio.sleep(10)
+
+        try:
+            # Retry attempt
+            service = get_google_sheets_service()
+            sheet = service.spreadsheets()
+
+            # Format timestamp as YYYY-MM-DD HH:MM:SS
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+            # Prepare the row data with specific column layout
+            row = [
+                timestamp,      # Column A - timestamp
+                amount,        # Column B - amount
+                category,      # Column C - category
+                description,   # Column D - description
+                "",           # Column E - empty
+                currency      # Column F - currency
+            ]
+
+            body = {
+                'values': [row]
+            }
+
+            # Append the row to the sheet
+            result = sheet.values().append(
+                spreadsheetId=GOOGLE_SHEET_ID,
+                range=RANGE_NAME,
+                valueInputOption='USER_ENTERED',
+                insertDataOption='INSERT_ROWS',
+                body=body
+            ).execute()
+
+            return True, None
+
+        except Exception as retry_e:
+            return False, f"Error saving to Google Sheets after retry: {str(retry_e)}"
 
 def generate_pie_chart(category_totals, currency, date_str):
     """Generate a pie chart for category spending and save as an image."""
