@@ -22,6 +22,7 @@ Your task is to:
    - work (e.g., work-related expenses)
    - education (e.g., courses, books, tuition)
    - bonus (this is a special category and can only be specified within the description)
+   - eating out (e.g. bars, restaurants, cafes)
    - extra (use only if the expense does not fit any other category)
 
 5. Extract the original description without the expense amount, currency, and category.
