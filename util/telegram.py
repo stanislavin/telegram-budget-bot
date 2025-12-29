@@ -167,6 +167,71 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = parse_callback_data(query.data)
     action = data.get('action')
     expense_id = data.get('id')
+    
+    if action == 'manual_openrouter_retry':
+        # Handle manual retry for OpenRouter API call
+        # The original message is the one that was replied to by the status message
+        if not query.message or not query.message.reply_to_message:
+            await query.edit_message_text("❌ Unable to retry: original message not found.")
+            return
+
+        original_message = query.message.reply_to_message.text
+        if not original_message:
+            await query.edit_message_text("❌ Unable to retry: original message text is empty.")
+            return
+
+        await query.edit_message_text("🔄 Retrying OpenRouter API call...")
+
+        # Process message with OpenRouter - with retry
+        processed_data, error = await process_with_openrouter(original_message)
+
+        if error:
+            await query.edit_message_text(f"❌ Error: {error}")
+            # Add manual retry button again
+            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_openrouter_retry|id:{expense_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
+            return
+
+        amount, currency, category, description = processed_data
+
+        # Store the expense data for confirmation
+        # Use the ID from callback data if available, otherwise generate from message
+        if not expense_id:
+            expense_id = f"{update.effective_message.chat_id}-{update.effective_message.message_id}"
+            
+        pending_expenses[expense_id] = {
+            'amount': amount,
+            'currency': currency,
+            'category': category,
+            'description': description,
+            'status_message': query.message
+        }
+
+        # Create confirmation buttons
+        keyboard = [
+            [
+                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+            ],
+            [
+                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        await query.edit_message_text(
+            f"📊 Please confirm the expense (auto-confirms in 10s):\n"
+            f"Amount: {amount} {currency}\n"
+            f"Category: {category}\n"
+            f"Description: {description}",
+            reply_markup=reply_markup
+        )
+
+        # Start auto-confirmation timer
+        asyncio.create_task(auto_confirm_expense(expense_id, context))
+        return
+
     lock = expense_locks.setdefault(expense_id, asyncio.Lock())
     async with lock:
         expense_data = pending_expenses.get(expense_id)
@@ -324,60 +389,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Clean up regardless of success or failure as the button action has been processed
             pending_expenses.pop(expense_id, None)
             _remember_processed_expense(expense_id, final_text)
-        elif data.get('action') == 'manual_openrouter_retry':
-            # Handle manual retry for OpenRouter API call
-            original_message = update.effective_message.text
-            if not original_message:
-                await query.edit_message_text("❌ Unable to retry: original message not found.")
-                return
 
-            await query.edit_message_text("🔄 Retrying OpenRouter API call...")
-
-            # Process message with OpenRouter - with retry
-            processed_data, error = await process_with_openrouter(original_message)
-
-            if error:
-                await query.edit_message_text(f"❌ Error: {error}")
-                # Add manual retry button again
-                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data="manual_openrouter_retry")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_reply_markup(reply_markup=reply_markup)
-                return
-
-            amount, currency, category, description = processed_data
-
-            # Store the expense data for confirmation
-            expense_id = f"{update.effective_message.chat_id}-{update.effective_message.message_id}"
-            pending_expenses[expense_id] = {
-                'amount': amount,
-                'currency': currency,
-                'category': category,
-                'description': description,
-                'status_message': query.message
-            }
-
-            # Create confirmation buttons
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-                ],
-                [
-                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await query.edit_message_text(
-                f"📊 Please confirm the expense (auto-confirms in 10s):\n"
-                f"Amount: {amount} {currency}\n"
-                f"Category: {category}\n"
-                f"Description: {description}",
-                reply_markup=reply_markup
-            )
-
-            # Start auto-confirmation timer
-            asyncio.create_task(auto_confirm_expense(expense_id, context))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
@@ -423,7 +435,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if error:
         await status_message.edit_text(f"❌ Error: {error}")
         # Add manual retry button for OpenRouter failures
-        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data="manual_openrouter_retry")]]
+        expense_id = f"{update.message.chat_id}-{update.message.message_id}"
+        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_openrouter_retry|id:{expense_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await status_message.edit_reply_markup(reply_markup=reply_markup)
         return
