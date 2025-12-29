@@ -34,9 +34,9 @@ def _remember_processed_expense(expense_id: str, final_text: str):
 def load_categories():
     prompt = get_llm_prompt()
     # Extract categories from the prompt using regex
-    category_pattern = r'- ([a-zA-Z]+) \(.*?\)'
+    category_pattern = r'- ([a-zA-Z\s]+) \(.*?\)'
     import re
-    categories = re.findall(category_pattern, prompt)
+    categories = [cat.strip() for cat in re.findall(category_pattern, prompt)]
     return categories
 
 CATEGORIES = load_categories()
