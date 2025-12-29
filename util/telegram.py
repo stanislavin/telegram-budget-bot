@@ -4,7 +4,7 @@ import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt
+from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSION
 from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats
 from util.openrouter import process_with_openrouter
 from util.scheduler import start_daily_summary_scheduler
@@ -183,7 +183,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🔄 Retrying OpenRouter API call...")
 
         # Process message with OpenRouter - with retry
-        processed_data, error = await process_with_openrouter(original_message)
+        # process_with_openrouter now returns ((data), model_name), error
+        result, error = await process_with_openrouter(original_message)
 
         if error:
             await query.edit_message_text(f"❌ Error: {error}")
@@ -193,6 +194,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_reply_markup(reply_markup=reply_markup)
             return
 
+        processed_data, model_used = result
         amount, currency, category, description = processed_data
 
         # Store the expense data for confirmation
@@ -220,12 +222,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        fallback_msg = ""
+        if model_used != OPENROUTER_LLM_VERSION:
+            fallback_msg = f"\n\n⚠️ *Fallback used:* `{model_used}`"
+
         await query.edit_message_text(
             f"📊 Please confirm the expense (auto-confirms in 10s):\n"
             f"Amount: {amount} {currency}\n"
             f"Category: {category}\n"
-            f"Description: {description}",
-            reply_markup=reply_markup
+            f"Description: {description}{fallback_msg}",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
         )
 
         # Start auto-confirmation timer
@@ -430,7 +437,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Process message with OpenRouter - with retry
     await status_message.edit_text("🤖 Analyzing your expense with AI...")
-    processed_data, error = await process_with_openrouter(message)
+    result, error = await process_with_openrouter(message)
 
     if error:
         await status_message.edit_text(f"❌ Error: {error}")
@@ -441,6 +448,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_message.edit_reply_markup(reply_markup=reply_markup)
         return
 
+    processed_data, model_used = result
     amount, currency, category, description = processed_data
 
     # Store the expense data for confirmation
@@ -465,12 +473,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
+    fallback_msg = ""
+    if model_used != OPENROUTER_LLM_VERSION:
+        fallback_msg = f"\n\n⚠️ *Fallback used:* `{model_used}`"
+
     await status_message.edit_text(
         f"📊 Please confirm the expense (auto-confirms in 10s):\n"
         f"Amount: {amount} {currency}\n"
         f"Category: {category}\n"
-        f"Description: {description}",
-        reply_markup=reply_markup
+        f"Description: {description}{fallback_msg}",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
     )
 
     # Start auto-confirmation timer

@@ -2,7 +2,13 @@ import logging
 import requests
 import asyncio
 
-from util.config import OPENROUTER_API_KEY, OPENROUTER_LLM_VERSION, OPENROUTER_URL, get_llm_prompt
+from util.config import (
+    OPENROUTER_API_KEY, 
+    OPENROUTER_LLM_VERSION, 
+    OPENROUTER_FALLBACK_MODELS,
+    OPENROUTER_URL, 
+    get_llm_prompt
+)
 from util.retry_handler import with_retry
 
 logger = logging.getLogger(__name__)
@@ -31,7 +37,7 @@ def _parse_openrouter_response(formatted_text: str):
 
 @with_retry(max_retries=1, error_message="Error processing with OpenRouter")
 async def process_with_openrouter(message: str) -> tuple:
-    """Process message using OpenRouter API and return formatted data."""
+    """Process message using OpenRouter API and return formatted data and model used."""
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -39,20 +45,43 @@ async def process_with_openrouter(message: str) -> tuple:
     }
 
     prompt = get_llm_prompt() + "\n\nDescription of expense is: " + message
-    data = {
-        "model": OPENROUTER_LLM_VERSION,
-        "messages": [
-            {
-                "role": "user",
-                "content": prompt
+    
+    models_to_try = [OPENROUTER_LLM_VERSION] + OPENROUTER_FALLBACK_MODELS
+    last_error = None
+
+    for model in models_to_try:
+        try:
+            logger.info(f"Attempting to process with model: {model}")
+            data = {
+                "model": model,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
             }
-        ]
-    }
 
-    response = requests.post(OPENROUTER_URL, headers=headers, json=data)
-    response.raise_for_status()
+            response = requests.post(OPENROUTER_URL, headers=headers, json=data)
+            
+            # If we get a 4xx error, we might want to try the next model
+            if 400 <= response.status_code < 500:
+                logger.warning(f"Model {model} failed with status {response.status_code}: {response.text}")
+                last_error = f"HTTP {response.status_code}: {response.text}"
+                continue
+                
+            response.raise_for_status()
 
-    # Extract the formatted response
-    formatted_text = response.json()['choices'][0]['message']['content'].strip()
+            # Extract the formatted response
+            formatted_text = response.json()['choices'][0]['message']['content'].strip()
+            parsed_data = _parse_openrouter_response(formatted_text)
+            
+            return parsed_data, model
+            
+        except Exception as e:
+            logger.error(f"Error with model {model}: {str(e)}")
+            last_error = str(e)
+            # For non-4xx errors, we might still want to try the next model if it's a connection issue
+            continue
 
-    return _parse_openrouter_response(formatted_text)
+    raise RuntimeError(f"All models failed. Last error: {last_error}")

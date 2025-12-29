@@ -84,7 +84,7 @@ async def test_help_command(mock_update, mock_context):
 async def test_handle_message_expense(mock_create_task, mock_save_to_sheets, mock_process_with_openrouter, mock_update, mock_context):
     """Test handling of a regular expense message."""
     mock_update.message.text = "50 USD food lunch"
-    mock_process_with_openrouter.return_value = ((50.0, "USD", "Food", "lunch"), None)
+    mock_process_with_openrouter.return_value = (((50.0, "USD", "Food", "lunch"), "anthropic/claude-3-opus-20240229"), None)
 
     # Mock the status message returned by reply_text
     mock_status_message = AsyncMock()
@@ -451,3 +451,23 @@ def test_start_telegram_polling_runs():
 
     mock_application.run_polling.assert_called_once_with(allowed_updates=Update.ALL_TYPES)
     assert app is mock_application
+@pytest.mark.asyncio
+@patch('util.telegram.process_with_openrouter', new_callable=AsyncMock)
+@patch('asyncio.create_task')
+async def test_handle_message_fallback_display(mock_create_task, mock_process_with_openrouter, mock_update, mock_context):
+    """Test that fallback model information is displayed to the user."""
+    mock_update.message.text = "50 USD food lunch"
+    fallback_model = "google/gemini-pro-1.5"
+    mock_process_with_openrouter.return_value = (((50.0, "USD", "Food", "lunch"), fallback_model), None)
+
+    mock_status_message = AsyncMock()
+    mock_update.message.reply_text.return_value = mock_status_message
+
+    await handle_message(mock_update, mock_context)
+
+    # Check that the final confirmation message contains fallback info
+    edit_calls = mock_status_message.edit_text.call_args_list
+    final_call = edit_calls[-1]
+    final_text = final_call[0][0]
+    assert f"⚠️ *Fallback used:* `{fallback_model}`" in final_text
+    assert "parse_mode='Markdown'" in str(final_call)

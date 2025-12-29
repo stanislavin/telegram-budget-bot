@@ -31,7 +31,8 @@ GOOGLE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 
 # OpenRouter Configuration
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'anthropic/claude-3-opus-20240229')
+OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'meta-llama/llama-3.3-70b-instruct:free')
+OPENROUTER_FALLBACK_MODELS = os.getenv('OPENROUTER_FALLBACK_MODELS', 'google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free').split(',')
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Health Check Configuration

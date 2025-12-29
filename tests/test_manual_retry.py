@@ -39,7 +39,7 @@ async def test_manual_openrouter_retry_bug_reproduction():
 
     # Mock process_with_openrouter to avoid actual API call
     with patch('util.telegram.process_with_openrouter', new_callable=AsyncMock) as mock_process:
-        mock_process.return_value = ((100.0, "RSD", "Food", "food"), None)
+        mock_process.return_value = (((100.0, "RSD", "Food", "food"), "anthropic/claude-3-opus-20240229"), None)
         
         # Call the callback
         await button_callback(update, context)
