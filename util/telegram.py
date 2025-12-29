@@ -239,6 +239,52 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(auto_confirm_expense(expense_id, context))
         return
 
+    if action == 'manual_sheet_retry':
+        # Handle manual retry for saving to Google Sheets
+        await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
+
+        # Retrieve expense data from the stored pending expense if still available
+        expense_data = pending_expenses.get(expense_id)
+        if not expense_data:
+            # If expense is not in pending (e.g. from auto-confirm), use the original data from context
+            await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
+            return
+
+        # Retry saving to sheets
+        success, error = await save_to_sheets(
+            expense_data['amount'],
+            expense_data['currency'],
+            expense_data['category'],
+            expense_data['description']
+        )
+
+        if success:
+            # Get daily stats
+            currency_totals, _ = await get_daily_stats()
+
+            # Format totals
+            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+
+            final_text = (
+                f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+                f"{expense_data['category']} - {expense_data['description']}\n\n"
+                f"💸 Total spent today: {totals_str}"
+            )
+        else:
+            final_text = f"❌ Error saving to spreadsheet: {error}"
+
+            # Show retry button again if it still fails
+            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_reply_markup(reply_markup=reply_markup)
+
+        await query.edit_message_text(final_text)
+
+        # Clean up regardless of success or failure as the button action has been processed
+        pending_expenses.pop(expense_id, None)
+        _remember_processed_expense(expense_id, final_text)
+        return
+
     lock = expense_locks.setdefault(expense_id, asyncio.Lock())
     async with lock:
         expense_data = pending_expenses.get(expense_id)
@@ -352,50 +398,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Description: {expense_data['description']}",
                 reply_markup=reply_markup
             )
-        elif action == 'manual_sheet_retry':
-            # Handle manual retry for saving to Google Sheets
-            await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
-
-            # Retrieve expense data from the stored pending expense if still available
-            expense_data = pending_expenses.get(expense_id)
-            if not expense_data:
-                # If expense is not in pending (e.g. from auto-confirm), use the original data from context
-                await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
-                return
-
-            # Retry saving to sheets
-            success, error = await save_to_sheets(
-                expense_data['amount'],
-                expense_data['currency'],
-                expense_data['category'],
-                expense_data['description']
-            )
-
-            if success:
-                # Get daily stats
-                currency_totals, _ = await get_daily_stats()
-
-                # Format totals
-                totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
-
-                final_text = (
-                    f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-                    f"{expense_data['category']} - {expense_data['description']}\n\n"
-                    f"💸 Total spent today: {totals_str}"
-                )
-            else:
-                final_text = f"❌ Error saving to spreadsheet: {error}"
-
-                # Show retry button again if it still fails
-                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_reply_markup(reply_markup=reply_markup)
-
-            await query.edit_message_text(final_text)
-
-            # Clean up regardless of success or failure as the button action has been processed
-            pending_expenses.pop(expense_id, None)
-            _remember_processed_expense(expense_id, final_text)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -3,7 +3,7 @@ import requests
 from unittest.mock import MagicMock, patch
 import asyncio
 from util.openrouter import process_with_openrouter
-from util.config import OPENROUTER_LLM_VERSION
+from util.config import OPENROUTER_LLM_VERSION, OPENROUTER_FALLBACK_MODELS
 
 @pytest.fixture
 def mock_openrouter_response():
@@ -186,5 +186,5 @@ async def test_process_with_openrouter_fallback_success():
         assert error is None
         data, model = result
         assert data == (100.0, 'RSD', 'Food', 'Groceries')
-        assert model == 'google/gemini-pro-1.5' # First fallback
+        assert model == OPENROUTER_FALLBACK_MODELS[0] # First fallback
         assert mock_post.call_count == 2
