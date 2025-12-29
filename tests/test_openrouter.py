@@ -3,6 +3,7 @@ import requests
 from unittest.mock import MagicMock, patch
 import asyncio
 from util.openrouter import process_with_openrouter
+from util.config import OPENROUTER_LLM_VERSION
 
 @pytest.fixture
 def mock_openrouter_response():
@@ -81,7 +82,9 @@ async def test_process_with_openrouter_success(mock_openrouter_response):
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'RSD', 'Food', 'Groceries')
+    data, model = result
+    assert data == (100.0, 'RSD', 'Food', 'Groceries')
+    assert model == OPENROUTER_LLM_VERSION
     mock_openrouter_response.assert_called_once()
 
 @pytest.mark.asyncio
@@ -91,7 +94,8 @@ async def test_process_with_openrouter_rub_currency(mock_openrouter_response_rub
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'RUB', 'Food', 'Groceries')
+    data, model = result
+    assert data == (100.0, 'RUB', 'Food', 'Groceries')
     mock_openrouter_response_rub.assert_called_once()
 
 @pytest.mark.asyncio
@@ -101,7 +105,8 @@ async def test_process_with_openrouter_eur_currency(mock_openrouter_response_eur
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'EUR', 'Food', 'Groceries')
+    data, model = result
+    assert data == (100.0, 'EUR', 'Food', 'Groceries')
     mock_openrouter_response_eur.assert_called_once()
 
 @pytest.mark.asyncio
@@ -111,7 +116,8 @@ async def test_process_with_openrouter_rsd_currency(mock_openrouter_response_rsd
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'RSD', 'Food', 'Groceries')
+    data, model = result
+    assert data == (100.0, 'RSD', 'Food', 'Groceries')
     mock_openrouter_response_rsd.assert_called_once()
 
 @pytest.mark.asyncio
@@ -121,7 +127,8 @@ async def test_process_with_openrouter_invalid_currency_defaults_to_rub(mock_ope
     result, error = await process_with_openrouter(message)
     
     assert error is None
-    assert result == (100.0, 'RUB', 'Food', 'Groceries')
+    data, model = result
+    assert data == (100.0, 'RUB', 'Food', 'Groceries')
     mock_openrouter_response_invalid_currency.assert_called_once()
 
 @pytest.mark.asyncio
@@ -131,8 +138,10 @@ async def test_process_with_openrouter_api_error(mock_openrouter_error_response)
     result, error = await process_with_openrouter(message)
     
     assert result is None
-    assert "Error processing with OpenRouter: 500 Server Error" in error
-    assert mock_openrouter_error_response.call_count == 2
+    assert "Error processing with OpenRouter" in error
+    # It tries all 3 models (primary + 2 fallbacks) and then retries the whole process once due to @with_retry
+    # Total attempts = (1 primary + 2 fallbacks) * (1 initial + 1 retry) = 6
+    assert mock_openrouter_error_response.call_count == 6
 
 @pytest.mark.asyncio
 async def test_process_with_openrouter_parsing_error():
@@ -150,4 +159,32 @@ async def test_process_with_openrouter_parsing_error():
         
         assert result is None
         assert "Failed to parse OpenRouter response" in error
+        # Parsing error happens after successful HTTP call, so it tries all 3 models and then retries
+        assert mock_post.call_count == 6
+
+@pytest.mark.asyncio
+async def test_process_with_openrouter_fallback_success():
+    """Test that it falls back to the next model on 4xx error."""
+    with patch('requests.post') as mock_post:
+        # First call fails with 404
+        mock_response_404 = MagicMock()
+        mock_response_404.status_code = 404
+        mock_response_404.text = "Model not found"
+        
+        # Second call succeeds
+        mock_response_success = MagicMock()
+        mock_response_success.status_code = 200
+        mock_response_success.json.return_value = {
+            'choices': [{'message': {'content': '100.00,RSD,Food,Groceries'}}]
+        }
+        
+        mock_post.side_effect = [mock_response_404, mock_response_success]
+        
+        message = "100 rsd food groceries"
+        result, error = await process_with_openrouter(message)
+        
+        assert error is None
+        data, model = result
+        assert data == (100.0, 'RSD', 'Food', 'Groceries')
+        assert model == 'google/gemini-pro-1.5' # First fallback
         assert mock_post.call_count == 2
