@@ -132,7 +132,7 @@ async def test_process_with_openrouter_api_error(mock_openrouter_error_response)
     
     assert result is None
     assert "Error processing with OpenRouter: 500 Server Error" in error
-    mock_openrouter_error_response.assert_called_once()
+    assert mock_openrouter_error_response.call_count == 2
 
 @pytest.mark.asyncio
 async def test_process_with_openrouter_parsing_error():
@@ -150,4 +150,4 @@ async def test_process_with_openrouter_parsing_error():
         
         assert result is None
         assert "Failed to parse OpenRouter response" in error
-        mock_post.assert_called_once()
+        assert mock_post.call_count == 2

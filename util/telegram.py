@@ -5,8 +5,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt
-from util.sheets import save_to_sheets, save_to_sheets_with_retry, get_recent_expenses, get_daily_summary, get_daily_stats
-from util.openrouter import process_with_openrouter, process_with_openrouter_with_retry
+from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats
+from util.openrouter import process_with_openrouter
 from util.scheduler import start_daily_summary_scheduler
 
 logger = logging.getLogger(__name__)
@@ -81,16 +81,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
     await update.message.reply_text("🔄 Calculating today's expenses...")
-    summary_text, chart_path = await get_daily_summary()
-    
-    if chart_path and os.path.exists(chart_path):
-        # Send the chart image
-        await update.message.reply_photo(photo=open(chart_path, 'rb'), caption=summary_text)
-        # Clean up the temporary chart file
-        os.remove(chart_path)
-    else:
-        # Send only the text if chart generation failed
-        await update.message.reply_text(summary_text)
+    summary_text, _ = await get_daily_summary()
+    await update.message.reply_text(summary_text)
 
 async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Automatically confirm an expense after 10 seconds if no user action."""
@@ -106,7 +98,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
         status_message = expense_data['status_message']
 
         # Save to sheets with retry
-        success, error = await save_to_sheets_with_retry(
+        success, error = await save_to_sheets(
             expense_data['amount'],
             expense_data['currency'],
             expense_data['category'],
@@ -193,7 +185,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if action == 'confirm':
             await query.edit_message_text("💾 Saving to spreadsheet...")
-            success, error = await save_to_sheets_with_retry(
+            success, error = await save_to_sheets(
                 expense_data['amount'],
                 expense_data['currency'],
                 expense_data['category'],
@@ -300,7 +292,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             # Retry saving to sheets
-            success, error = await save_to_sheets_with_retry(
+            success, error = await save_to_sheets(
                 expense_data['amount'],
                 expense_data['currency'],
                 expense_data['category'],
@@ -342,7 +334,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("🔄 Retrying OpenRouter API call...")
 
             # Process message with OpenRouter - with retry
-            processed_data, error = await process_with_openrouter_with_retry(original_message)
+            processed_data, error = await process_with_openrouter(original_message)
 
             if error:
                 await query.edit_message_text(f"❌ Error: {error}")
@@ -413,16 +405,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
-        summary_text, chart_path = await get_daily_summary()
-
-        if chart_path and os.path.exists(chart_path):
-            # Send the chart image
-            await update.message.reply_photo(photo=open(chart_path, 'rb'), caption=summary_text)
-            # Clean up the temporary chart file
-            os.remove(chart_path)
-        else:
-            # Send only the text if chart generation failed
-            await update.message.reply_text(summary_text)
+        summary_text, _ = await get_daily_summary()
+        await update.message.reply_text(summary_text)
         return
     elif message == "🏓 Ping":
         await update.message.reply_text("pong 🏓")
@@ -434,7 +418,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Process message with OpenRouter - with retry
     await status_message.edit_text("🤖 Analyzing your expense with AI...")
-    processed_data, error = await process_with_openrouter_with_retry(message)
+    processed_data, error = await process_with_openrouter(message)
 
     if error:
         await status_message.edit_text(f"❌ Error: {error}")

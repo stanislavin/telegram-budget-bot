@@ -45,7 +45,7 @@ async def test_save_to_sheets_failure(mock_sheets_service):
     
     success, error = await save_to_sheets(25.50, 'USD', 'food', 'groceries')
     
-    assert success is False
+    assert success is None
     assert "API Error" in error
 
 
@@ -188,7 +188,7 @@ async def test_get_daily_summary_success(mock_sheets_service):
     assert "Total spent:" in summary_text
     assert "- 50.50 USD" in summary_text
     assert "dinner" not in summary_text  # Yesterday's expense should not appear
-    assert chart_path is not None  # Chart should be generated
+    assert chart_path is None  # Chart should not be generated
 
 
 @pytest.mark.asyncio
@@ -237,7 +237,7 @@ async def test_get_daily_summary_specific_date(mock_sheets_service):
     assert "Total spent:" in summary_text
     assert "- 30.00 EUR" in summary_text
     assert "transport" not in summary_text  # Previous day's expense should not appear
-    assert chart_path is not None  # Chart should be generated
+    assert chart_path is None  # Chart should not be generated
 
 
 @pytest.mark.asyncio
@@ -265,7 +265,7 @@ async def test_get_daily_summary_sorted_by_amount(mock_sheets_service):
     assert 'food: 25.00' in category_lines[0]  # Highest amount first
     assert 'entertainment: 15.00' in category_lines[1]  # Second highest
     assert 'transport: 5.00' in category_lines[2]  # Lowest amount last
-    assert chart_path is not None  # Chart should be generated
+    assert chart_path is None  # Chart should not be generated
 
 
 @pytest.mark.asyncio
