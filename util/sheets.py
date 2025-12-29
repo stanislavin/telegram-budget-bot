@@ -3,13 +3,11 @@ import os
 import asyncio
 from datetime import datetime, timedelta
 
-import matplotlib
-matplotlib.use("Agg")  # Use headless backend to avoid GUI requirements during tests/runs.
-import matplotlib.pyplot as plt
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 
 from util.config import GOOGLE_CREDENTIALS_PATH, GOOGLE_SHEET_ID, SHEET_NAME, RANGE_NAME, GOOGLE_SCOPES
+from util.retry_handler import with_retry
 
 logger = logging.getLogger(__name__)
 
@@ -25,153 +23,39 @@ def get_google_sheets_service():
         logger.error(f"Failed to initialize Google Sheets service: {str(e)}")
         raise
 
+@with_retry(max_retries=1, error_message="Error saving to Google Sheets")
 async def save_to_sheets(amount: float, currency: str, category: str, description: str):
     """Save the expense to Google Sheets."""
-    try:
-        service = get_google_sheets_service()
-        sheet = service.spreadsheets()
+    service = get_google_sheets_service()
+    sheet = service.spreadsheets()
 
-        # Format timestamp as YYYY-MM-DD HH:MM:SS
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Format timestamp as YYYY-MM-DD HH:MM:SS
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Prepare the row data with specific column layout
-        row = [
-            timestamp,      # Column A - timestamp
-            amount,        # Column B - amount
-            category,      # Column C - category
-            description,   # Column D - description
-            "",           # Column E - empty
-            currency      # Column F - currency
-        ]
+    # Prepare the row data with specific column layout
+    row = [
+        timestamp,      # Column A - timestamp
+        amount,        # Column B - amount
+        category,      # Column C - category
+        description,   # Column D - description
+        "",           # Column E - empty
+        currency      # Column F - currency
+    ]
 
-        body = {
-            'values': [row]
-        }
+    body = {
+        'values': [row]
+    }
 
-        # Append the row to the sheet
-        result = sheet.values().append(
-            spreadsheetId=GOOGLE_SHEET_ID,
-            range=RANGE_NAME,
-            valueInputOption='USER_ENTERED',
-            insertDataOption='INSERT_ROWS',
-            body=body
-        ).execute()
+    # Append the row to the sheet
+    sheet.values().append(
+        spreadsheetId=GOOGLE_SHEET_ID,
+        range=RANGE_NAME,
+        valueInputOption='USER_ENTERED',
+        insertDataOption='INSERT_ROWS',
+        body=body
+    ).execute()
 
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
-
-async def save_to_sheets_with_retry(amount: float, currency: str, category: str, description: str):
-    """Save the expense to Google Sheets with retry logic."""
-    try:
-        service = get_google_sheets_service()
-        sheet = service.spreadsheets()
-
-        # Format timestamp as YYYY-MM-DD HH:MM:SS
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        # Prepare the row data with specific column layout
-        row = [
-            timestamp,      # Column A - timestamp
-            amount,        # Column B - amount
-            category,      # Column C - category
-            description,   # Column D - description
-            "",           # Column E - empty
-            currency      # Column F - currency
-        ]
-
-        body = {
-            'values': [row]
-        }
-
-        # Append the row to the sheet
-        result = sheet.values().append(
-            spreadsheetId=GOOGLE_SHEET_ID,
-            range=RANGE_NAME,
-            valueInputOption='USER_ENTERED',
-            insertDataOption='INSERT_ROWS',
-            body=body
-        ).execute()
-
-        return True, None
-
-    except Exception as e:
-        logger.warning(f"Google Sheets API request failed: {str(e)}, retrying in 10 seconds...")
-
-        # Wait 10 seconds before retry
-        await asyncio.sleep(10)
-
-        try:
-            # Retry attempt
-            service = get_google_sheets_service()
-            sheet = service.spreadsheets()
-
-            # Format timestamp as YYYY-MM-DD HH:MM:SS
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-            # Prepare the row data with specific column layout
-            row = [
-                timestamp,      # Column A - timestamp
-                amount,        # Column B - amount
-                category,      # Column C - category
-                description,   # Column D - description
-                "",           # Column E - empty
-                currency      # Column F - currency
-            ]
-
-            body = {
-                'values': [row]
-            }
-
-            # Append the row to the sheet
-            result = sheet.values().append(
-                spreadsheetId=GOOGLE_SHEET_ID,
-                range=RANGE_NAME,
-                valueInputOption='USER_ENTERED',
-                insertDataOption='INSERT_ROWS',
-                body=body
-            ).execute()
-
-            return True, None
-
-        except Exception as retry_e:
-            return False, f"Error saving to Google Sheets after retry: {str(retry_e)}"
-
-def generate_pie_chart(category_totals, currency, date_str):
-    """Generate a pie chart for category spending and save as an image."""
-    # Create figure and axis
-    fig, ax = plt.subplots(figsize=(10, 8))
-    
-    # Sort categories by amount (descending)
-    sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
-    labels = [item[0] for item in sorted_categories]
-    sizes = [item[1] for item in sorted_categories]
-    
-    # Create custom labels with both amount and percentage
-    total = sum(sizes)
-    custom_labels = [f'{label}\n{size:.2f} {currency}\n({size/total*100:.1f}%)' 
-                     for label, size in zip(labels, sizes)]
-    
-    # Create pie chart with custom labels
-    wedges, _, autotexts = ax.pie(sizes, labels=custom_labels, autopct='', startangle=90)
-    
-    # Format the appearance
-    ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle
-    ax.set_title(f'Daily Spending by Category - {date_str}', fontsize=16, pad=20)
-    
-    # Adjust label styling
-    for autotext in autotexts:
-        autotext.set_color('white')
-        autotext.set_fontsize(9)
-        autotext.set_weight('bold')
-    
-    # Save the chart as an image
-    chart_path = f'temp_pie_chart_{date_str.replace("/", "_")}.png'
-    plt.savefig(chart_path, bbox_inches='tight', dpi=300)
-    plt.close(fig)  # Close the figure to free memory
-    
-    return chart_path
+    return True
 
 async def get_daily_stats(target_date: datetime = None):
     """Get daily spending statistics for a specific date."""
@@ -226,12 +110,6 @@ async def get_daily_stats(target_date: datetime = None):
                         currency = row[5]  # Column F
                         
                         # Add to category total
-                        # We need to track category totals per currency for the pie chart if we want to be precise,
-                        # but for now the pie chart logic assumes one currency or mixes them.
-                        # Let's keep category_totals simple for now (summing amounts regardless of currency for the chart size)
-                        # or better, let's just track amounts.
-                        # The original code summed up amounts for category_totals.
-                        
                         if category in category_totals:
                             category_totals[category] += amount
                         else:
@@ -275,23 +153,11 @@ async def get_daily_summary(target_date: datetime = None):
         # Sort categories by amount (highest first)
         sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
         
-        # Note: The category breakdown currently doesn't show currency if mixed.
-        # This is a limitation of the current display logic which we might want to address later.
-        # For now, we'll just list the categories and their values.
-        # To make it better, we should probably list categories with their dominant currency or just the value.
-        # However, the prompt asked for "totals per currency".
-        
         for category, amount in sorted_categories:
-             # We don't have per-category currency here easily without more refactoring.
-             # Let's just show the amount and maybe a generic label or just the amount.
-             # The previous code used a single 'currency' variable which was just the LAST currency seen.
-             # Let's try to infer the currency if there is only one, otherwise maybe omit it or show 'mixed'?
-             
              if len(currency_totals) == 1:
                  currency = list(currency_totals.keys())[0]
                  message += f"📊 {category}: {amount:.2f} {currency}\n"
              else:
-                 # If mixed currencies, just show the amount (it's a sum of mixed units, which is weird but existing behavior for categories)
                  message += f"📊 {category}: {amount:.2f}\n"
         
         message += "\n💸 Total spent:\n"
@@ -300,13 +166,7 @@ async def get_daily_summary(target_date: datetime = None):
         
         logger.info(f"Generated summary message: {message[:100]}...")
         
-        # Generate pie chart
-        # For the pie chart, we'll pass the primary currency if only one, else 'Mixed'
-        chart_currency = list(currency_totals.keys())[0] if len(currency_totals) == 1 else "Mixed"
-        chart_path = generate_pie_chart(category_totals, chart_currency, formatted_date)
-        logger.info(f"Generated chart at: {chart_path}")
-        
-        return message, chart_path
+        return message, None
         
     except Exception as e:
         logger.error(f"Error fetching daily summary: {str(e)}", exc_info=True)
