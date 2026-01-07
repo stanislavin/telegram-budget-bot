@@ -17,7 +17,7 @@ Your task is to:
    - toys (e.g., children's toys, games for kids)
    - services (includes subscriptions like streaming or software)
    - sport (e.g., gym, sports equipment, coach)
-   - taxi (e.g., cab rides, ride-sharing)
+   - transport (e.g., cab rides, ride-sharing, metro, bus)
    - whatever (e.g., miscellaneous personal spending)
    - work (e.g., work-related expenses)
    - education (e.g., courses, books, tuition)
