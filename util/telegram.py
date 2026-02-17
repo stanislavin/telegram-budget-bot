@@ -8,6 +8,7 @@ from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSI
 from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats
 from util.openrouter import process_with_openrouter
 from util.scheduler import start_daily_summary_scheduler
+from util.message_queue import enqueue_expense, queue_size
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,11 @@ pending_expenses = {}
 recently_processed_expenses = {}
 expense_locks = {}
 PROCESSED_EXPENSE_TTL_SECONDS = 30
+
+
+def _schedule_auto_confirm(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
+    """Schedule the auto-confirm timer as a background task."""
+    asyncio.create_task(auto_confirm_expense(expense_id, context))
 
 
 async def _cleanup_processed_expense(expense_id: str):
@@ -236,7 +242,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         # Start auto-confirmation timer
-        asyncio.create_task(auto_confirm_expense(expense_id, context))
+        _schedule_auto_confirm(expense_id, context)
         return
 
     if action == 'manual_sheet_retry':
@@ -433,7 +439,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("pong 🏓")
         return
 
-    # Process regular expense messages
+    # Enqueue expense for sequential processing per chat
+    chat_id = str(update.message.chat_id)
+    queued = queue_size(chat_id)
+    if queued > 0:
+        await update.message.reply_text(f"⏳ Queued (#{queued + 1}). Your expense will be processed shortly.")
+    await enqueue_expense(chat_id, _process_expense(update, context))
+
+
+async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Core expense processing logic executed inside the per-chat queue."""
+    message = update.message.text
     # Send initial message and store it for updates
     status_message = await update.message.reply_text("🔄 Processing your expense...")
 
@@ -489,7 +505,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     # Start auto-confirmation timer
-    asyncio.create_task(auto_confirm_expense(expense_id, context))
+    _schedule_auto_confirm(expense_id, context)
 
 def create_application():
     """Create and configure the Telegram application."""
