@@ -1,4 +1,5 @@
 import logging
+import time
 import asyncio
 import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -449,13 +450,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Core expense processing logic executed inside the per-chat queue."""
+    t_start = time.monotonic()
     message = update.message.text
     # Send initial message and store it for updates
     status_message = await update.message.reply_text("🔄 Processing your expense...")
 
     # Process message with OpenRouter - with retry
     await status_message.edit_text("🤖 Analyzing your expense with AI...")
+    t_ai_start = time.monotonic()
     result, error = await process_with_openrouter(message)
+    t_ai_end = time.monotonic()
 
     if error:
         await status_message.edit_text(f"❌ Error: {error}")
@@ -493,15 +497,21 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     fallback_msg = ""
     if model_used != OPENROUTER_LLM_VERSION:
-        fallback_msg = f"\n\n⚠️ *Fallback used:* `{model_used}`"
+        fallback_msg = f"\n\n⚠️ <b>Fallback used:</b> <code>{model_used}</code>"
+
+    # Build timing footer
+    t_total = time.monotonic() - t_start
+    t_ai = t_ai_end - t_ai_start
+    model_short = model_used.split('/')[-1] if '/' in model_used else model_used
+    timing_line = f"\n\n<pre>🤖 {model_short} · {t_ai:.2f}s AI · {t_total:.2f}s total</pre>"
 
     await status_message.edit_text(
         f"📊 Please confirm the expense (auto-confirms in 10s):\n"
         f"Amount: {amount} {currency}\n"
         f"Category: {category}\n"
-        f"Description: {description}{fallback_msg}",
+        f"Description: {description}{fallback_msg}{timing_line}",
         reply_markup=reply_markup,
-        parse_mode='Markdown'
+        parse_mode='HTML'
     )
 
     # Start auto-confirmation timer

@@ -135,6 +135,11 @@ async def test_handle_message_expense(mock_save_to_sheets, mock_process_with_ope
     assert "Amount: 50.0 USD" in final_text
     assert "Category: Food" in final_text
     assert "Description: lunch" in final_text
+    # Timing footer should be present
+    assert "<pre>" in final_text
+    assert "s AI" in final_text
+    assert "s total</pre>" in final_text
+    assert "parse_mode='HTML'" in str(final_call)
 
     mock_schedule.assert_called_once()
 
@@ -492,12 +497,15 @@ async def test_handle_message_fallback_display(mock_process_with_openrouter, moc
     await handle_message(mock_update, mock_context)
     await _drain_chat_queue(mock_update.message.chat_id)
 
-    # Check that the final confirmation message contains fallback info
+    # Check that the final confirmation message contains fallback info (HTML)
     edit_calls = mock_status_message.edit_text.call_args_list
     final_call = edit_calls[-1]
     final_text = final_call[0][0]
-    assert f"⚠️ *Fallback used:* `{fallback_model}`" in final_text
-    assert "parse_mode='Markdown'" in str(final_call)
+    assert f"⚠️ <b>Fallback used:</b> <code>{fallback_model}</code>" in final_text
+    assert "parse_mode='HTML'" in str(final_call)
+    # Timing footer should also be present
+    assert "<pre>" in final_text
+    assert "s total</pre>" in final_text
 
 
 # ----------  Sequential queue tests  ----------
