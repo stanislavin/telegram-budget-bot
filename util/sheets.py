@@ -197,8 +197,7 @@ async def get_recent_expenses(days: int = 2):
         
         # Filter and format expenses
         recent_expenses = []
-        total_amount = 0
-        currency = None
+        currency_totals = {}
         
         for row in values[1:]:  # Skip header row
             if len(row) >= 6:  # Ensure row has all required columns
@@ -228,7 +227,12 @@ async def get_recent_expenses(days: int = 2):
                         # Format the expense entry
                         formatted_timestamp = timestamp.strftime("%d/%m/%Y %H:%M")
                         recent_expenses.append(f"{formatted_timestamp} | {amount:.2f} {currency} | {category} | {description}")
-                        total_amount += amount
+                        
+                        # Track per-currency totals
+                        if currency in currency_totals:
+                            currency_totals[currency] += amount
+                        else:
+                            currency_totals[currency] = amount
                         
                 except (ValueError, IndexError):
                     # Skip rows with parsing errors
@@ -248,7 +252,9 @@ async def get_recent_expenses(days: int = 2):
         for expense in recent_expenses:
             message += expense + "\n"
         
-        message += f"\n💸 Total: {total_amount:.2f} {currency}"
+        message += "\n💸 Total:\n"
+        for currency, total in currency_totals.items():
+            message += f"- {total:.2f} {currency}\n"
         
         return message
         
