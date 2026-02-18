@@ -62,7 +62,7 @@ async def process_with_openrouter(message: str) -> tuple:
                 ]
             }
 
-            response = requests.post(OPENROUTER_URL, headers=headers, json=data)
+            response = await asyncio.to_thread(requests.post, OPENROUTER_URL, headers=headers, json=data)
             
             # If we get a 4xx error, we might want to try the next model
             if 400 <= response.status_code < 500:
