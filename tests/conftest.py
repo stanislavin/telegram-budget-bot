@@ -103,6 +103,8 @@ def sample_expense_data():
 @pytest.fixture
 def mock_google_sheets_service():
     """Mock Google Sheets service for testing."""
+    import util.sheets
+    util.sheets._sheets_service = None  # Reset cache before test
     with patch('util.sheets.build') as mock_build:
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -116,6 +118,7 @@ def mock_google_sheets_service():
         }
         
         yield mock_service
+    util.sheets._sheets_service = None  # Reset cache after test
 
 
 @pytest.fixture

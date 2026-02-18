@@ -11,14 +11,19 @@ from util.retry_handler import with_retry
 
 logger = logging.getLogger(__name__)
 
+_sheets_service = None
+
 def get_google_sheets_service():
-    """Initialize and return Google Sheets service."""
+    """Initialize and return Google Sheets service (cached singleton)."""
+    global _sheets_service
+    if _sheets_service is not None:
+        return _sheets_service
 
     try:
         creds = service_account.Credentials.from_service_account_file(
             GOOGLE_CREDENTIALS_PATH, scopes=GOOGLE_SCOPES)
-        service = build('sheets', 'v4', credentials=creds)
-        return service
+        _sheets_service = build('sheets', 'v4', credentials=creds)
+        return _sheets_service
     except Exception as e:
         logger.error(f"Failed to initialize Google Sheets service: {str(e)}")
         raise

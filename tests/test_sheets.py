@@ -17,10 +17,13 @@ def mock_service_account():
 @pytest.fixture
 def mock_sheets_service(mock_service_account):
     """Mock Google Sheets service."""
+    import util.sheets
+    util.sheets._sheets_service = None  # Reset cache before test
     with patch('util.sheets.build') as mock_build:
         mock_service = MagicMock()
         mock_build.return_value = mock_service
         yield mock_service
+    util.sheets._sheets_service = None  # Reset cache after test
 
 
 @pytest.mark.asyncio
@@ -119,6 +122,8 @@ async def test_get_recent_expenses_no_recent_data(mock_google_sheets_service):
 
 def test_get_google_sheets_service_success(mock_service_account):
     """Test successful Google Sheets service initialization."""
+    import util.sheets
+    util.sheets._sheets_service = None  # Reset cache
     with patch('util.sheets.build') as mock_build:
         mock_service = MagicMock()
         mock_build.return_value = mock_service
@@ -127,15 +132,19 @@ def test_get_google_sheets_service_success(mock_service_account):
         
         assert service == mock_service
         mock_build.assert_called_once_with('sheets', 'v4', credentials=mock_service_account)
+    util.sheets._sheets_service = None  # Clean up
 
 
 def test_get_google_sheets_service_failure():
     """Test Google Sheets service initialization failure."""
+    import util.sheets
+    util.sheets._sheets_service = None  # Reset cache to force re-initialization
     with patch('util.sheets.service_account.Credentials.from_service_account_file') as mock_creds:
         mock_creds.side_effect = Exception("Credential Error")
         
         with pytest.raises(Exception, match="Credential Error"):
             get_google_sheets_service()
+    util.sheets._sheets_service = None  # Clean up
 
 
 @pytest.mark.asyncio
