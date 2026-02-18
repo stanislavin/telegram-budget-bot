@@ -130,7 +130,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             await status_message.edit_text(final_text)
 
             # Add manual retry button
-            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
+            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await status_message.edit_reply_markup(reply_markup=reply_markup)
 
@@ -333,7 +333,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 final_text = f"❌ Error saving to spreadsheet: {error}"
 
                 # Add manual retry button for failed saves
-                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"manual_sheet_retry|id:{expense_id}")]]
+                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await query.edit_message_reply_markup(reply_markup=reply_markup)
 
