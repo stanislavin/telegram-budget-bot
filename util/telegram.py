@@ -185,128 +185,203 @@ def format_daily_totals(currency_totals: dict) -> str:
     """Format currency_totals dict into a human-readable string."""
     return ", ".join(f"{amount:.2f} {cur}" for cur, amount in currency_totals.items())
 
+async def _handle_openrouter_retry(query, expense_id, update, context):
+    """Handle manual retry for OpenRouter API call."""
+    if not query.message or not query.message.reply_to_message:
+        await query.edit_message_text("❌ Unable to retry: original message not found.")
+        return
+
+    original_message = query.message.reply_to_message.text
+    if not original_message:
+        await query.edit_message_text("❌ Unable to retry: original message text is empty.")
+        return
+
+    await query.edit_message_text("🔄 Retrying OpenRouter API call...")
+
+    result, error = await process_with_openrouter(original_message)
+
+    if error:
+        await query.edit_message_text(f"❌ Error: {error}")
+        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_openrouter_retry|id:{expense_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+        return
+
+    processed_data, model_used = result
+    amount, currency, category, description = processed_data
+
+    if not expense_id:
+        expense_id = f"{update.effective_message.chat_id}-{update.effective_message.message_id}"
+
+    pending_expenses[expense_id] = {
+        'amount': amount,
+        'currency': currency,
+        'category': category,
+        'description': description,
+        'status_message': query.message
+    }
+
+    reply_markup = _confirmation_keyboard(expense_id)
+
+    fallback_msg = ""
+    if model_used != OPENROUTER_LLM_VERSION:
+        fallback_msg = f"\n\n⚠️ *Fallback used:* `{model_used}`"
+
+    await query.edit_message_text(
+        f"📊 Please confirm the expense (auto-confirms in 10s):\n"
+        f"Amount: {amount} {currency}\n"
+        f"Category: {category}\n"
+        f"Description: {description}{fallback_msg}",
+        reply_markup=reply_markup,
+        parse_mode='Markdown'
+    )
+
+    _schedule_auto_confirm(expense_id, context)
+
+
+async def _handle_sheet_retry(query, expense_id):
+    """Handle manual retry for saving to Google Sheets."""
+    await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
+
+    expense_data = pending_expenses.get(expense_id)
+    if not expense_data:
+        await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
+        return
+
+    success, error = await save_to_sheets(
+        expense_data['amount'],
+        expense_data['currency'],
+        expense_data['category'],
+        expense_data['description']
+    )
+
+    if success:
+        currency_totals, _ = await get_daily_stats()
+        totals_str = format_daily_totals(currency_totals)
+
+        final_text = (
+            f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+            f"{expense_data['category']} - {expense_data['description']}\n\n"
+            f"💸 Total spent today: {totals_str}"
+        )
+    else:
+        final_text = f"❌ Error saving to spreadsheet: {error}"
+
+        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+
+    await query.edit_message_text(final_text)
+
+    pending_expenses.pop(expense_id, None)
+    _remember_processed_expense(expense_id, final_text)
+
+
+async def _handle_confirm(query, expense_id, expense_data):
+    """Handle expense confirmation."""
+    await query.edit_message_text("💾 Saving to spreadsheet...")
+    success, error = await save_to_sheets(
+        expense_data['amount'],
+        expense_data['currency'],
+        expense_data['category'],
+        expense_data['description']
+    )
+
+    if success:
+        currency_totals, _ = await get_daily_stats()
+        totals_str = format_daily_totals(currency_totals)
+
+        final_text = (
+            f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
+            f"{expense_data['category']} - {expense_data['description']}\n\n"
+            f"💸 Total spent today: {totals_str}"
+        )
+    else:
+        final_text = f"❌ Error saving to spreadsheet: {error}"
+
+        keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_reply_markup(reply_markup=reply_markup)
+
+    await query.edit_message_text(final_text)
+
+    pending_expenses.pop(expense_id, None)
+    _remember_processed_expense(expense_id, final_text)
+
+
+async def _handle_cancel(query, expense_id):
+    """Handle expense cancellation."""
+    final_text = "Expense cancelled."
+    await query.edit_message_text(final_text)
+    pending_expenses.pop(expense_id, None)
+    _remember_processed_expense(expense_id, final_text)
+
+
+async def _handle_change_category(query, expense_id, expense_data):
+    """Show category selection buttons."""
+    reply_markup = await show_category_buttons(expense_id, expense_data['category'])
+    await query.edit_message_text(
+        f"📊 Select a new category for:\n"
+        f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+        f"Current category: {expense_data['category']}\n"
+        f"Description: {expense_data['description']}",
+        reply_markup=reply_markup
+    )
+
+
+async def _handle_select_category(query, expense_id, expense_data, data):
+    """Handle category selection."""
+    new_category = data.get('category')
+    expense_data['category'] = new_category
+
+    reply_markup = _confirmation_keyboard(expense_id)
+
+    await query.edit_message_text(
+        f"📊 Please confirm the expense:\n"
+        f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+        f"Category: {expense_data['category']}\n"
+        f"Description: {expense_data['description']}",
+        reply_markup=reply_markup
+    )
+
+
+async def _handle_back(query, expense_id, expense_data):
+    """Handle back button — show the confirmation screen again."""
+    reply_markup = _confirmation_keyboard(expense_id)
+
+    await query.edit_message_text(
+        f"📊 Please confirm the expense:\n"
+        f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
+        f"Category: {expense_data['category']}\n"
+        f"Description: {expense_data['description']}",
+        reply_markup=reply_markup
+    )
+
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button callbacks."""
+    """Handle button callbacks — dispatches to per-action handlers."""
     query = update.callback_query
     await query.answer()
-    
+
     data = parse_callback_data(query.data)
     action = data.get('action')
     expense_id = data.get('id')
-    
+
+    # Actions that don't require a pending expense
     if action == 'manual_openrouter_retry':
-        # Handle manual retry for OpenRouter API call
-        # The original message is the one that was replied to by the status message
-        if not query.message or not query.message.reply_to_message:
-            await query.edit_message_text("❌ Unable to retry: original message not found.")
-            return
-
-        original_message = query.message.reply_to_message.text
-        if not original_message:
-            await query.edit_message_text("❌ Unable to retry: original message text is empty.")
-            return
-
-        await query.edit_message_text("🔄 Retrying OpenRouter API call...")
-
-        # Process message with OpenRouter - with retry
-        # process_with_openrouter now returns ((data), model_name), error
-        result, error = await process_with_openrouter(original_message)
-
-        if error:
-            await query.edit_message_text(f"❌ Error: {error}")
-            # Add manual retry button again
-            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_openrouter_retry|id:{expense_id}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-            return
-
-        processed_data, model_used = result
-        amount, currency, category, description = processed_data
-
-        # Store the expense data for confirmation
-        # Use the ID from callback data if available, otherwise generate from message
-        if not expense_id:
-            expense_id = f"{update.effective_message.chat_id}-{update.effective_message.message_id}"
-            
-        pending_expenses[expense_id] = {
-            'amount': amount,
-            'currency': currency,
-            'category': category,
-            'description': description,
-            'status_message': query.message
-        }
-
-        # Create confirmation buttons
-        reply_markup = _confirmation_keyboard(expense_id)
-
-        fallback_msg = ""
-        if model_used != OPENROUTER_LLM_VERSION:
-            fallback_msg = f"\n\n⚠️ *Fallback used:* `{model_used}`"
-
-        await query.edit_message_text(
-            f"📊 Please confirm the expense (auto-confirms in 10s):\n"
-            f"Amount: {amount} {currency}\n"
-            f"Category: {category}\n"
-            f"Description: {description}{fallback_msg}",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
-
-        # Start auto-confirmation timer
-        _schedule_auto_confirm(expense_id, context)
+        await _handle_openrouter_retry(query, expense_id, update, context)
         return
 
     if action == 'manual_sheet_retry':
-        # Handle manual retry for saving to Google Sheets
-        await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
-
-        # Retrieve expense data from the stored pending expense if still available
-        expense_data = pending_expenses.get(expense_id)
-        if not expense_data:
-            # If expense is not in pending (e.g. from auto-confirm), use the original data from context
-            await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
-            return
-
-        # Retry saving to sheets
-        success, error = await save_to_sheets(
-            expense_data['amount'],
-            expense_data['currency'],
-            expense_data['category'],
-            expense_data['description']
-        )
-
-        if success:
-            # Get daily stats
-            currency_totals, _ = await get_daily_stats()
-
-            # Format totals
-            totals_str = format_daily_totals(currency_totals)
-
-            final_text = (
-                f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-                f"{expense_data['category']} - {expense_data['description']}\n\n"
-                f"💸 Total spent today: {totals_str}"
-            )
-        else:
-            final_text = f"❌ Error saving to spreadsheet: {error}"
-
-            # Show retry button again if it still fails
-            keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_reply_markup(reply_markup=reply_markup)
-
-        await query.edit_message_text(final_text)
-
-        # Clean up regardless of success or failure as the button action has been processed
-        pending_expenses.pop(expense_id, None)
-        _remember_processed_expense(expense_id, final_text)
+        await _handle_sheet_retry(query, expense_id)
         return
 
+    # Actions that require a pending expense and lock
     lock = expense_locks.setdefault(expense_id, asyncio.Lock())
     async with lock:
         expense_data = pending_expenses.get(expense_id)
         processed_text = recently_processed_expenses.get(expense_id)
-        
+
         if not expense_data:
             if processed_text:
                 current_text = getattr(getattr(query, "message", None), "text", "")
@@ -317,86 +392,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 await query.edit_message_text("❌ This expense has expired or was already processed.")
             return
-        
+
         if action == 'confirm':
-            await query.edit_message_text("💾 Saving to spreadsheet...")
-            success, error = await save_to_sheets(
-                expense_data['amount'],
-                expense_data['currency'],
-                expense_data['category'],
-                expense_data['description']
-            )
-
-            if success:
-                # Get daily stats
-                currency_totals, _ = await get_daily_stats()
-
-                # Format totals
-                totals_str = format_daily_totals(currency_totals)
-
-                final_text = (
-                    f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-                    f"{expense_data['category']} - {expense_data['description']}\n\n"
-                    f"💸 Total spent today: {totals_str}"
-                )
-            else:
-                final_text = f"❌ Error saving to spreadsheet: {error}"
-
-                # Add manual retry button for failed saves
-                keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_reply_markup(reply_markup=reply_markup)
-
-            await query.edit_message_text(final_text)
-
-            # Clean up regardless of success or failure as the button action has been processed
-            pending_expenses.pop(expense_id, None)
-            _remember_processed_expense(expense_id, final_text)
-                
+            await _handle_confirm(query, expense_id, expense_data)
         elif action == 'cancel':
-            final_text = "Expense cancelled."
-            await query.edit_message_text(final_text)
-            pending_expenses.pop(expense_id, None)
-            _remember_processed_expense(expense_id, final_text)
-        
+            await _handle_cancel(query, expense_id)
         elif action == 'change_category':
-            # Show category selection buttons
-            reply_markup = await show_category_buttons(expense_id, expense_data['category'])
-            await query.edit_message_text(
-                f"📊 Select a new category for:\n"
-                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-                f"Current category: {expense_data['category']}\n"
-                f"Description: {expense_data['description']}",
-                reply_markup=reply_markup
-            )
-        
+            await _handle_change_category(query, expense_id, expense_data)
         elif action == 'select_category':
-            # Update the category
-            new_category = data.get('category')
-            expense_data['category'] = new_category
-            
-            # Show the main confirmation buttons again
-            reply_markup = _confirmation_keyboard(expense_id)
-            
-            await query.edit_message_text(
-                f"📊 Please confirm the expense:\n"
-                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-                f"Category: {expense_data['category']}\n"
-                f"Description: {expense_data['description']}",
-                reply_markup=reply_markup
-            )
-        
+            await _handle_select_category(query, expense_id, expense_data, data)
         elif action == 'back':
-            # Show the main confirmation buttons again
-            reply_markup = _confirmation_keyboard(expense_id)
+            await _handle_back(query, expense_id, expense_data)
 
-            await query.edit_message_text(
-                f"📊 Please confirm the expense:\n"
-                f"Amount: {expense_data['amount']} {expense_data['currency']}\n"
-                f"Category: {expense_data['category']}\n"
-                f"Description: {expense_data['description']}",
-                reply_markup=reply_markup
-            )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
