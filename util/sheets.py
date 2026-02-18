@@ -65,6 +65,86 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
 
     return True
 
+
+async def delete_last_expense():
+    """Delete the last expense (bottom row) from the sheet.
+
+    Returns:
+        (dict, None) on success — dict has amount, currency, category, description.
+        (None, str)  on failure — str is the error message.
+    """
+    global _daily_stats_cache, _daily_stats_cache_time
+
+    try:
+        service = get_google_sheets_service()
+        sheet = service.spreadsheets()
+
+        # Fetch all values to find the last row
+        result = sheet.values().get(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            range=RANGE_NAME
+        ).execute()
+
+        values = result.get('values', [])
+        if len(values) <= 1:
+            return None, "No expenses to delete."
+
+        last_row = values[-1]
+        # Row index in the sheet (0-based); header is row 0 in the values list
+        sheet_row_index = len(values)  # 1-based row number (header = row 1)
+
+        # Parse the row for the response message
+        expense_info = {
+            'amount': last_row[1] if len(last_row) > 1 else '?',
+            'currency': last_row[5] if len(last_row) > 5 else '?',
+            'category': last_row[2] if len(last_row) > 2 else '?',
+            'description': last_row[3] if len(last_row) > 3 else '?',
+        }
+
+        # Get the sheet's internal ID (gid) for the deleteDimension request
+        spreadsheet_meta = service.spreadsheets().get(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            fields='sheets.properties'
+        ).execute()
+
+        sheet_id = None
+        for s in spreadsheet_meta.get('sheets', []):
+            if s['properties']['title'] == SHEET_NAME:
+                sheet_id = s['properties']['sheetId']
+                break
+
+        if sheet_id is None:
+            return None, f"Sheet '{SHEET_NAME}' not found."
+
+        # Delete the last row
+        requests_body = {
+            'requests': [{
+                'deleteDimension': {
+                    'range': {
+                        'sheetId': sheet_id,
+                        'dimension': 'ROWS',
+                        'startIndex': sheet_row_index - 1,  # 0-based
+                        'endIndex': sheet_row_index,          # exclusive
+                    }
+                }
+            }]
+        }
+
+        service.spreadsheets().batchUpdate(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            body=requests_body
+        ).execute()
+
+        # Invalidate daily stats cache
+        _daily_stats_cache = {}
+        _daily_stats_cache_time = 0
+
+        return expense_info, None
+
+    except Exception as e:
+        logger.error(f"Error deleting last expense: {str(e)}")
+        return None, str(e)
+
 async def get_daily_stats(target_date: datetime = None):
     """Get daily spending statistics for a specific date (with short TTL cache)."""
     import time as _time

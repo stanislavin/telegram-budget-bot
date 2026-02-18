@@ -7,7 +7,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKe
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
 from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSION
-from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats
+from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats, delete_last_expense
 from util.openrouter import process_with_openrouter
 from util.scheduler import start_daily_summary_scheduler
 from util.message_queue import enqueue_expense, queue_size
@@ -80,7 +80,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'amount currency category description\n'
         'Example: 25.50 USD food groceries\n\n'
         'Commands:\n'
-        '/summary - Get today\'s spending summary\n\n'
+        '/summary - Get today\'s spending summary\n'
+        '/undo - Delete the last expense\n\n'
         'Or use the buttons below to interact with me!',
         reply_markup=get_command_keyboard()
     )
@@ -90,6 +91,24 @@ async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🔄 Calculating today's expenses...")
     summary_text, _ = await get_daily_summary()
     await update.message.reply_text(summary_text)
+
+
+async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Delete the last expense from the sheet."""
+    await update.message.reply_text("🔄 Deleting last expense...")
+
+    expense_info, error = await delete_last_expense()
+
+    if error:
+        await update.message.reply_text(f"❌ {error}")
+        return
+
+    await update.message.reply_text(
+        f"🗑️ Deleted last expense:\n"
+        f"Amount: {expense_info['amount']} {expense_info['currency']}\n"
+        f"Category: {expense_info['category']}\n"
+        f"Description: {expense_info['description']}"
+    )
 
 async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Automatically confirm an expense after 10 seconds if no user action."""
@@ -515,6 +534,7 @@ def create_application():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary_command))
+    application.add_handler(CommandHandler("undo", undo_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     
