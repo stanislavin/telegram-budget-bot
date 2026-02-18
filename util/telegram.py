@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import asyncio
 import os
@@ -42,7 +43,6 @@ def load_categories():
     prompt = get_llm_prompt()
     # Extract categories from the prompt using regex
     category_pattern = r'- ([a-zA-Z\s]+) \(.*?\)'
-    import re
     categories = [cat.strip() for cat in re.findall(category_pattern, prompt)]
     return categories
 
@@ -117,7 +117,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             currency_totals, _ = await get_daily_stats()
 
             # Format totals
-            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+            totals_str = format_daily_totals(currency_totals)
 
             final_text = (
                 f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
@@ -165,6 +165,25 @@ def parse_callback_data(data: str) -> dict:
             key, value = part.split(':', 1)
             result[key] = value
     return result
+
+
+def _confirmation_keyboard(expense_id: str) -> InlineKeyboardMarkup:
+    """Build the standard Confirm / Cancel / Change Category keyboard."""
+    keyboard = [
+        [
+            InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
+            InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
+        ],
+        [
+            InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
+def format_daily_totals(currency_totals: dict) -> str:
+    """Format currency_totals dict into a human-readable string."""
+    return ", ".join(f"{amount:.2f} {cur}" for cur, amount in currency_totals.items())
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks."""
@@ -218,16 +237,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
 
         # Create confirmation buttons
-        keyboard = [
-            [
-                InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-            ],
-            [
-                InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = _confirmation_keyboard(expense_id)
 
         fallback_msg = ""
         if model_used != OPENROUTER_LLM_VERSION:
@@ -270,7 +280,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             currency_totals, _ = await get_daily_stats()
 
             # Format totals
-            totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+            totals_str = format_daily_totals(currency_totals)
 
             final_text = (
                 f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
@@ -322,7 +332,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 currency_totals, _ = await get_daily_stats()
 
                 # Format totals
-                totals_str = ", ".join([f"{amount:.2f} {currency}" for currency, amount in currency_totals.items()])
+                totals_str = format_daily_totals(currency_totals)
 
                 final_text = (
                     f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
@@ -366,16 +376,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             expense_data['category'] = new_category
             
             # Show the main confirmation buttons again
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-                ],
-                [
-                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = _confirmation_keyboard(expense_id)
             
             await query.edit_message_text(
                 f"📊 Please confirm the expense:\n"
@@ -387,16 +388,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         elif action == 'back':
             # Show the main confirmation buttons again
-            keyboard = [
-                [
-                    InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-                    InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-                ],
-                [
-                    InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-                ]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = _confirmation_keyboard(expense_id)
 
             await query.edit_message_text(
                 f"📊 Please confirm the expense:\n"
@@ -484,16 +476,7 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     }
 
     # Create confirmation buttons
-    keyboard = [
-        [
-            InlineKeyboardButton("✅ Confirm", callback_data=f"action:confirm|id:{expense_id}"),
-            InlineKeyboardButton("❌ Cancel", callback_data=f"action:cancel|id:{expense_id}")
-        ],
-        [
-            InlineKeyboardButton("🔄 Change Category", callback_data=f"action:change_category|id:{expense_id}")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup = _confirmation_keyboard(expense_id)
 
     fallback_msg = ""
     if model_used != OPENROUTER_LLM_VERSION:

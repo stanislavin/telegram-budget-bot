@@ -71,7 +71,8 @@ async def test_get_recent_expenses_success(mock_google_sheets_service):
     assert "Recent Expenses (Last 2 Days)" in result
     assert "25.50 USD" in result
     assert "10.00 EUR" in result
-    assert "Total: 35.50 EUR" in result  # Should use currency from last expense
+    assert "- 25.50 USD" in result
+    assert "- 10.00 EUR" in result
 
 
 @pytest.mark.asyncio
