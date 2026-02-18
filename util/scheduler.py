@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Optional, Dict
 import pytz
 from telegram.ext import ContextTypes
@@ -63,7 +63,7 @@ class DailySummaryScheduler:
                 
                 # If we've already passed 17:00 today, schedule for tomorrow
                 if now.time() >= target_time:
-                    next_run = next_run.replace(day=next_run.day + 1)
+                    next_run += timedelta(days=1)
                 
                 # Calculate seconds until next run
                 sleep_seconds = (next_run - now).total_seconds()
@@ -79,7 +79,7 @@ class DailySummaryScheduler:
                         await self.send_daily_summary_to_all(context)
                     
                     # Schedule for next day
-                    next_run = next_run.replace(day=next_run.day + 1)
+                    next_run += timedelta(days=1)
                     sleep_seconds = (next_run - datetime.now(pytz.UTC)).total_seconds()
                     await asyncio.sleep(max(0, sleep_seconds))
                 
