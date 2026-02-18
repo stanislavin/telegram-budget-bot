@@ -143,7 +143,9 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
                 f"{expense_data['category']} - {expense_data['description']}\n\n"
                 f"💸 Total spent today: {totals_str}"
             )
-            await status_message.edit_text(final_text)
+            keyboard = [[InlineKeyboardButton("🗑️ Undo", callback_data="action:undo")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await status_message.edit_text(final_text, reply_markup=reply_markup)
         else:
             final_text = f"❌ Error auto-saving to spreadsheet: {error}"
             await status_message.edit_text(final_text)
@@ -315,14 +317,15 @@ async def _handle_confirm(query, expense_id, expense_data):
             f"{expense_data['category']} - {expense_data['description']}\n\n"
             f"💸 Total spent today: {totals_str}"
         )
+        keyboard = [[InlineKeyboardButton("🗑️ Undo", callback_data="action:undo")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(final_text, reply_markup=reply_markup)
     else:
         final_text = f"❌ Error saving to spreadsheet: {error}"
 
         keyboard = [[InlineKeyboardButton("🔄 Manual Retry", callback_data=f"action:manual_sheet_retry|id:{expense_id}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_reply_markup(reply_markup=reply_markup)
-
-    await query.edit_message_text(final_text)
+        await query.edit_message_text(final_text, reply_markup=reply_markup)
 
     pending_expenses.pop(expense_id, None)
     _remember_processed_expense(expense_id, final_text)
@@ -377,6 +380,24 @@ async def _handle_back(query, expense_id, expense_data):
     )
 
 
+async def _handle_undo(query):
+    """Handle the inline Undo button — deletes the last expense."""
+    await query.edit_message_text("🔄 Undoing last expense...")
+
+    expense_info, error = await delete_last_expense()
+
+    if error:
+        await query.edit_message_text(f"❌ {error}")
+        return
+
+    await query.edit_message_text(
+        f"🗑️ Deleted last expense:\n"
+        f"Amount: {expense_info['amount']} {expense_info['currency']}\n"
+        f"Category: {expense_info['category']}\n"
+        f"Description: {expense_info['description']}"
+    )
+
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks — dispatches to per-action handlers."""
     query = update.callback_query
@@ -393,6 +414,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if action == 'manual_sheet_retry':
         await _handle_sheet_retry(query, expense_id)
+        return
+
+    if action == 'undo':
+        await _handle_undo(query)
         return
 
     # Actions that require a pending expense and lock
