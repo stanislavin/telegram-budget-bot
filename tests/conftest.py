@@ -14,11 +14,15 @@ import asyncio
 
 @pytest.fixture(autouse=True)
 def clean_pending_expenses():
-    """Automatically clean up pending expenses after each test."""
+    """Automatically clean up pending expenses and caches after each test."""
     yield
     # Clean up any pending expenses that might have been left by tests
     from util.telegram import pending_expenses
     pending_expenses.clear()
+    # Reset daily stats cache
+    import util.sheets
+    util.sheets._daily_stats_cache = {}
+    util.sheets._daily_stats_cache_time = 0
 
 
 @pytest.fixture

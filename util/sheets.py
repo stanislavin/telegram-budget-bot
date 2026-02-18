@@ -12,6 +12,9 @@ from util.retry_handler import with_retry
 logger = logging.getLogger(__name__)
 
 _sheets_service = None
+_daily_stats_cache = {}
+_daily_stats_cache_time = 0
+_DAILY_STATS_TTL = 30  # seconds
 
 def get_google_sheets_service():
     """Initialize and return Google Sheets service (cached singleton)."""
@@ -63,18 +66,25 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
     return True
 
 async def get_daily_stats(target_date: datetime = None):
-    """Get daily spending statistics for a specific date."""
+    """Get daily spending statistics for a specific date (with short TTL cache)."""
+    import time as _time
+    global _daily_stats_cache, _daily_stats_cache_time
+
+    if target_date is None:
+        target_date = datetime.now().date()
+    elif hasattr(target_date, 'date'):
+        target_date = target_date.date()
+
+    cache_key = target_date.strftime('%Y-%m-%d')
+    now = _time.monotonic()
+    if cache_key in _daily_stats_cache and (now - _daily_stats_cache_time) < _DAILY_STATS_TTL:
+        return _daily_stats_cache[cache_key]
+
     try:
         service = get_google_sheets_service()
         sheet = service.spreadsheets()
         
-        # Use today if no date provided
-        if target_date is None:
-            target_date = datetime.now().date()
-        elif hasattr(target_date, 'date'):
-            target_date = target_date.date()
-        
-        logger.info(f"Fetching daily stats for {target_date.strftime('%Y-%m-%d')}")
+        logger.info(f"Fetching daily stats for {cache_key}")
         
         # Get all data from the sheet
         result = sheet.values().get(
@@ -129,7 +139,10 @@ async def get_daily_stats(target_date: datetime = None):
                 except (ValueError, IndexError):
                     continue
         
-        return currency_totals, category_totals
+        result_data = (currency_totals, category_totals)
+        _daily_stats_cache[cache_key] = result_data
+        _daily_stats_cache_time = now
+        return result_data
         
     except Exception as e:
         logger.error(f"Error fetching daily stats: {str(e)}")
