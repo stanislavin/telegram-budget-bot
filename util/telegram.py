@@ -13,7 +13,7 @@ from util.config import (
 )
 from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats, delete_last_expense
 from util.openrouter import process_with_openrouter
-from util.scheduler import start_daily_summary_scheduler
+
 from util.message_queue import enqueue_expense, queue_size
 
 logger = logging.getLogger(__name__)
@@ -24,8 +24,6 @@ recently_processed_expenses = {}
 expense_locks = {}
 PROCESSED_EXPENSE_TTL_SECONDS = 30
 
-# Track chats that have already received the startup notification
-_startup_notified: set[str] = set()
 
 
 def _schedule_auto_confirm(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
@@ -61,7 +59,7 @@ def get_command_keyboard():
         [KeyboardButton("💰 Add Expense")],
         [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
         [KeyboardButton("📅 Recent Expenses"), KeyboardButton("💸 Today's Summary")],
-        [KeyboardButton("↩️ Undo last"), KeyboardButton("🏓 Ping")]
+        [KeyboardButton("↩️ Undo last"), KeyboardButton("ℹ️ Bot Info")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -70,7 +68,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = str(update.message.chat_id)
     
     # Start daily summary scheduler for this chat
-    start_daily_summary_scheduler(chat_id, context, "UTC")
     
     await update.message.reply_text(
         'Hi! I\'m your budget tracking bot. Send me messages in the format:\n'
@@ -433,7 +430,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
-    await _maybe_send_startup_notification(update)
     message = update.message.text
 
     # Handle command keyboard buttons
@@ -464,8 +460,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif message == "↩️ Undo last":
         await undo_command(update, context)
         return
-    elif message == "🏓 Ping":
-        await update.message.reply_text("pong 🏓")
+    elif message == "ℹ️ Bot Info":
+        info_text = _get_bot_info_text()
+        await update.message.reply_text(info_text, parse_mode='HTML')
         return
 
     # Enqueue expense for sequential processing per chat
@@ -552,37 +549,17 @@ def _get_last_commit_info() -> str:
         return "(git info unavailable)"
 
 
-
-def _build_startup_text() -> str:
-    """Build the startup notification message (called once at module load)."""
+def _get_bot_info_text() -> str:
+    """Build the bot info message with version and config details."""
     fallbacks = ", ".join(OPENROUTER_FALLBACK_MODELS) if OPENROUTER_FALLBACK_MODELS else "(none)"
     commit_info = _get_last_commit_info()
     return (
-        "\U0001f680 <b>Bot started</b>\n\n"
+        "🤖 <b>Bot Information</b>\n\n"
         f"<b>SERVICE_URL:</b> <code>{SERVICE_URL}</code>\n"
         f"<b>LLM:</b> <code>{OPENROUTER_LLM_VERSION}</code>\n"
         f"<b>Fallbacks:</b> <code>{fallbacks}</code>\n\n"
         f"<b>Last commit:</b>\n<pre>{commit_info}</pre>"
     )
-
-_startup_text = _build_startup_text()
-
-
-async def _maybe_send_startup_notification(update: Update):
-    """Send a one-time startup message to this chat if not already sent."""
-    chat_id = str(update.effective_chat.id)
-    if chat_id in _startup_notified:
-        return
-    _startup_notified.add(chat_id)
-
-    try:
-        await update.effective_chat.send_message(
-            text=_startup_text,
-            parse_mode='HTML',
-        )
-        logger.info("Startup notification sent to chat %s", chat_id)
-    except Exception as e:
-        logger.error("Failed to send startup notification to chat %s: %s", chat_id, e)
 
 
 
