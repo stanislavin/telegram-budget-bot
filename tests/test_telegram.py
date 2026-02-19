@@ -329,7 +329,6 @@ async def test_auto_confirm_expense_success(mock_get_daily_stats, mock_save_to_s
     mock_status_message.edit_text.assert_called_once()
     call_args = mock_status_message.edit_text.call_args
     assert call_args[0][0] == f"⏱️ Auto-confirmed: 30.0 GBP - Utilities - Electricity bill\n\n💸 Total spent today: 50.00 GBP"
-    assert 'reply_markup' in call_args[1]
     assert expense_id not in pending_expenses
 
 @pytest.mark.asyncio
