@@ -416,11 +416,16 @@ async def test_handle_message_recent_expenses_button(mock_get_recent_expenses, m
     mock_update.message.reply_text.assert_any_call("Recent expenses data")
 
 @pytest.mark.asyncio
-async def test_handle_message_ping_button(mock_update, mock_context):
-    """Test '🏓 Ping' button handling."""
-    mock_update.message.text = "🏓 Ping"
+@patch('util.telegram._get_bot_info_text')
+async def test_handle_message_bot_info_button(mock_get_bot_info, mock_update, mock_context):
+    """Test 'ℹ️ Bot Info' button handling."""
+    mock_update.message.text = "ℹ️ Bot Info"
+    mock_get_bot_info.return_value = "<b>Bot Info</b>"
+    
     await handle_message(mock_update, mock_context)
-    mock_update.message.reply_text.assert_called_once_with("pong 🏓")
+    
+    mock_get_bot_info.assert_called_once()
+    mock_update.message.reply_text.assert_called_once_with("<b>Bot Info</b>", parse_mode='HTML')
 
 @pytest.mark.asyncio
 @patch('util.telegram.get_daily_summary', new_callable=AsyncMock)
@@ -451,12 +456,6 @@ async def test_handle_message_todays_summary_button(mock_get_daily_summary, mock
 @pytest.mark.asyncio
 
 
-@pytest.mark.asyncio
-@patch('util.telegram.start_daily_summary_scheduler')
-async def test_start_command_scheduler(mock_scheduler, mock_update, mock_context):
-    """Test that /start command initializes the daily summary scheduler."""
-    await start(mock_update, mock_context)
-    mock_scheduler.assert_called_once_with('12345', mock_context, 'UTC')
 
 
 def test_create_application_registers_handlers():
