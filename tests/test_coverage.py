@@ -3,16 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import asyncio
-import os
 
 from util.telegram import (
     button_callback,
     pending_expenses,
     recently_processed_expenses,
     expense_locks,
-    OPENROUTER_LLM_VERSION
 )
-from util.scheduler import DailySummaryScheduler, ChatScheduler, start_daily_summary_scheduler, stop_daily_summary_scheduler
 from util.sheets import get_daily_stats
 
 @pytest.fixture(autouse=True)
@@ -97,100 +94,6 @@ async def test_button_callback_manual_sheet_retry_no_data():
     # Check that it edit_message_text was called with the error message
     calls = update.callback_query.edit_message_text.call_args_list
     assert any("expense data no longer available" in str(c) for c in calls)
-
-@pytest.mark.asyncio
-async def test_scheduler_remove_chat():
-    """Test removing a chat from the scheduler."""
-    scheduler = DailySummaryScheduler()
-    scheduler.add_chat("chat1")
-    assert "chat1" in scheduler.chat_schedulers
-    
-    scheduler.remove_chat("chat1")
-    assert "chat1" not in scheduler.chat_schedulers
-    
-    # Removing non-existent chat should not raise error
-    scheduler.remove_chat("chat2")
-
-@pytest.mark.asyncio
-@patch('util.scheduler.get_daily_summary', new_callable=AsyncMock)
-async def test_scheduler_send_daily_summary_error(mock_get_summary):
-    """Test error handling when sending daily summary."""
-    scheduler = DailySummaryScheduler()
-    scheduler.add_chat("chat1")
-    
-    mock_get_summary.side_effect = Exception("Summary error")
-    
-    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-    context.bot.send_message = AsyncMock()
-    
-    # Should not raise exception
-    await scheduler.send_daily_summary_to_all(context)
-    context.bot.send_message.assert_not_called()
-
-@pytest.mark.asyncio
-@patch('util.scheduler.DailySummaryScheduler.start')
-def test_start_daily_summary_scheduler_global(mock_start):
-    """Test global scheduler initialization."""
-    from util import scheduler
-    scheduler._scheduler = None
-    
-    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-    start_daily_summary_scheduler("chat123", context)
-    
-    assert scheduler._scheduler is not None
-    assert "chat123" in scheduler._scheduler.chat_schedulers
-    mock_start.assert_called_once()
-
-@pytest.mark.asyncio
-def test_stop_daily_summary_scheduler_global():
-    """Test stopping the global scheduler."""
-    from util import scheduler
-    scheduler._scheduler = MagicMock()
-    
-    stop_daily_summary_scheduler()
-    
-    assert scheduler._scheduler is None
-
-@pytest.mark.asyncio
-@patch('util.scheduler.get_daily_summary', new_callable=AsyncMock)
-async def test_scheduler_send_daily_summary_no_chart(mock_get_summary):
-    """Test sending summary when no chart is generated."""
-    scheduler = DailySummaryScheduler()
-    scheduler.add_chat("chat1")
-    
-    mock_get_summary.return_value = ("Summary text", None)
-    
-    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-    context.bot.send_message = AsyncMock()
-    
-    await scheduler.send_daily_summary_to_all(context)
-    
-    context.bot.send_message.assert_called_once()
-    args, kwargs = context.bot.send_message.call_args
-    assert kwargs['chat_id'] == "chat1"
-    assert "Summary text" in kwargs['text']
-
-@pytest.mark.asyncio
-@patch('util.scheduler.get_daily_summary', new_callable=AsyncMock)
-@patch('os.path.exists')
-@patch('builtins.open')
-async def test_scheduler_send_daily_summary_with_chart(mock_open, mock_exists, mock_get_summary):
-    """Test sending summary with a chart."""
-    scheduler = DailySummaryScheduler()
-    scheduler.add_chat("chat1")
-    
-    mock_get_summary.return_value = ("Summary text", "path/to/chart.png")
-    mock_exists.return_value = True
-    mock_open.return_value = MagicMock()
-    
-    context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
-    context.bot.send_photo = AsyncMock()
-    
-    with patch('os.remove') as mock_remove:
-        await scheduler.send_daily_summary_to_all(context)
-        
-        context.bot.send_photo.assert_called_once()
-        mock_remove.assert_called_once_with("path/to/chart.png")
 
 @pytest.mark.asyncio
 @patch('util.sheets.get_google_sheets_service')

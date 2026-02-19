@@ -65,15 +65,10 @@ def get_command_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
-    chat_id = str(update.message.chat_id)
-    
-    # Start daily summary scheduler for this chat
-    
     await update.message.reply_text(
         'Hi! I\'m your budget tracking bot. Send me messages in the format:\n'
         'amount currency category description\n'
-        'Example: 25.50 USD food groceries\n\n'
-        '🕐 I\'ll also send you a daily spending summary every day at 17:00 UTC.',
+        'Example: 25.50 USD food groceries',
         reply_markup=get_command_keyboard()
     )
 
