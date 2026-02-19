@@ -3,10 +3,14 @@ import re
 import time
 import asyncio
 import os
+import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
-from util.config import TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSION
+from util.config import (
+    TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSION,
+    OPENROUTER_FALLBACK_MODELS, SERVICE_URL,
+)
 from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats, delete_last_expense
 from util.openrouter import process_with_openrouter
 from util.scheduler import start_daily_summary_scheduler
@@ -19,6 +23,9 @@ pending_expenses = {}
 recently_processed_expenses = {}
 expense_locks = {}
 PROCESSED_EXPENSE_TTL_SECONDS = 30
+
+# Track chats that have already received the startup notification
+_startup_notified: set[str] = set()
 
 
 def _schedule_auto_confirm(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
@@ -426,6 +433,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming messages."""
+    await _maybe_send_startup_notification(update)
     message = update.message.text
 
     # Handle command keyboard buttons
@@ -527,6 +535,56 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Start auto-confirmation timer
     _schedule_auto_confirm(expense_id, context)
+
+def _get_last_commit_info() -> str:
+    """Return a short summary of the last git commit, or a fallback message."""
+    try:
+        subject = subprocess.check_output(
+            ['git', 'log', '-1', '--pretty=format:%h %s'],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        files = subprocess.check_output(
+            ['git', 'diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD'],
+            stderr=subprocess.DEVNULL, text=True
+        ).strip()
+        return f"{subject}\n{files}" if files else subject
+    except Exception:
+        return "(git info unavailable)"
+
+
+
+def _build_startup_text() -> str:
+    """Build the startup notification message (called once at module load)."""
+    fallbacks = ", ".join(OPENROUTER_FALLBACK_MODELS) if OPENROUTER_FALLBACK_MODELS else "(none)"
+    commit_info = _get_last_commit_info()
+    return (
+        "\U0001f680 <b>Bot started</b>\n\n"
+        f"<b>SERVICE_URL:</b> <code>{SERVICE_URL}</code>\n"
+        f"<b>LLM:</b> <code>{OPENROUTER_LLM_VERSION}</code>\n"
+        f"<b>Fallbacks:</b> <code>{fallbacks}</code>\n\n"
+        f"<b>Last commit:</b>\n<pre>{commit_info}</pre>"
+    )
+
+_startup_text = _build_startup_text()
+
+
+async def _maybe_send_startup_notification(update: Update):
+    """Send a one-time startup message to this chat if not already sent."""
+    chat_id = str(update.effective_chat.id)
+    if chat_id in _startup_notified:
+        return
+    _startup_notified.add(chat_id)
+
+    try:
+        await update.effective_chat.send_message(
+            text=_startup_text,
+            parse_mode='HTML',
+        )
+        logger.info("Startup notification sent to chat %s", chat_id)
+    except Exception as e:
+        logger.error("Failed to send startup notification to chat %s: %s", chat_id, e)
+
+
 
 def create_application():
     """Create and configure the Telegram application."""
