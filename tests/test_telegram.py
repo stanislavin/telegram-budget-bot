@@ -10,6 +10,7 @@ from util.telegram import (
     handle_message,
     _process_expense,
     _schedule_auto_confirm,
+    _cleanup_processed_expense,
     button_callback,
     auto_confirm_expense,
     pending_expenses,
@@ -18,8 +19,12 @@ from util.telegram import (
     load_categories,
     CATEGORIES,
     summary_command,
+    undo_command,
     create_application,
     start_telegram_polling,
+    PROCESSED_EXPENSE_TTL_SECONDS,
+    _get_last_commit_info,
+    _get_bot_info_text,
 )
 from util.message_queue import _chat_queues, _chat_workers
 
@@ -614,3 +619,224 @@ async def test_queue_error_isolation(mock_process_with_openrouter, mock_schedule
 
     # Both were attempted — the worker didn't crash
     assert call_count == 2
+
+
+# ---------- _cleanup_processed_expense ----------
+
+@pytest.mark.asyncio
+@patch('util.telegram.asyncio.sleep', new_callable=AsyncMock)
+async def test_cleanup_processed_expense(mock_sleep):
+    """Test that _cleanup_processed_expense removes state after sleeping (lines 37-38)."""
+    expense_id = "cleanup-test-123"
+    recently_processed_expenses[expense_id] = "some text"
+    expense_locks[expense_id] = asyncio.Lock()
+
+    await _cleanup_processed_expense(expense_id)
+
+    mock_sleep.assert_awaited_once_with(PROCESSED_EXPENSE_TTL_SECONDS)
+    assert expense_id not in recently_processed_expenses
+    assert expense_id not in expense_locks
+
+
+# ---------- undo_command ----------
+
+@pytest.mark.asyncio
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_undo_command_success(mock_delete, mock_update, mock_context):
+    """Test undo_command when deletion succeeds (lines 97-110)."""
+    mock_delete.return_value = (
+        {'amount': '25.50', 'currency': 'USD', 'category': 'Food', 'description': 'lunch'},
+        None,
+    )
+
+    await undo_command(mock_update, mock_context)
+
+    reply_calls = [str(c) for c in mock_update.message.reply_text.call_args_list]
+    assert any("Deleting last expense" in c for c in reply_calls)
+    assert any("Deleted last expense" in c for c in reply_calls)
+    assert any("25.50" in c for c in reply_calls)
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_undo_command_error(mock_delete, mock_update, mock_context):
+    """Test undo_command when deletion fails (lines 97-103)."""
+    mock_delete.return_value = (None, "No expenses to delete.")
+
+    await undo_command(mock_update, mock_context)
+
+    reply_calls = [str(c) for c in mock_update.message.reply_text.call_args_list]
+    assert any("No expenses to delete." in c for c in reply_calls)
+
+
+# ---------- handle_message keyboard buttons ----------
+
+@pytest.mark.asyncio
+async def test_handle_message_help_button(mock_update, mock_context):
+    """Test '❓ Help' button routes to help_command (lines 443-444)."""
+    mock_update.message.text = "❓ Help"
+    await handle_message(mock_update, mock_context)
+    mock_update.message.reply_text.assert_called_once()
+    args, _ = mock_update.message.reply_text.call_args
+    assert 'Send me messages in the format:' in args[0]
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_handle_message_undo_button(mock_delete, mock_update, mock_context):
+    """Test '↩️ Undo last' button routes to undo_command (lines 456-457)."""
+    mock_delete.return_value = (
+        {'amount': '10.00', 'currency': 'USD', 'category': 'Food', 'description': 'coffee'},
+        None,
+    )
+    mock_update.message.text = "↩️ Undo last"
+    await handle_message(mock_update, mock_context)
+    mock_delete.assert_called_once()
+
+
+# ---------- _handle_openrouter_retry error paths ----------
+
+@pytest.mark.asyncio
+async def test_button_callback_openrouter_retry_no_reply_to_message(mock_update, mock_context):
+    """Test manual_openrouter_retry when reply_to_message is absent (lines 209-210)."""
+    mock_update.callback_query.data = "action:manual_openrouter_retry|id:test-123"
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.reply_to_message = None
+
+    await button_callback(mock_update, mock_context)
+
+    mock_update.callback_query.edit_message_text.assert_called_with(
+        "❌ Unable to retry: original message not found."
+    )
+
+
+@pytest.mark.asyncio
+async def test_button_callback_openrouter_retry_empty_text(mock_update, mock_context):
+    """Test manual_openrouter_retry when reply_to_message.text is empty (lines 214-215)."""
+    mock_update.callback_query.data = "action:manual_openrouter_retry|id:test-123"
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.reply_to_message = MagicMock()
+    mock_update.callback_query.message.reply_to_message.text = None
+
+    await button_callback(mock_update, mock_context)
+
+    mock_update.callback_query.edit_message_text.assert_called_with(
+        "❌ Unable to retry: original message text is empty."
+    )
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.process_with_openrouter', new_callable=AsyncMock)
+async def test_button_callback_openrouter_retry_api_error(mock_process, mock_update, mock_context):
+    """Test manual_openrouter_retry when OpenRouter returns an error (lines 222-226)."""
+    mock_update.callback_query.data = "action:manual_openrouter_retry|id:test-123"
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.reply_to_message = MagicMock()
+    mock_update.callback_query.message.reply_to_message.text = "50 USD food lunch"
+    mock_update.callback_query.edit_message_reply_markup = AsyncMock()
+    mock_process.return_value = (None, "OpenRouter API Error")
+
+    await button_callback(mock_update, mock_context)
+
+    edit_calls = [str(c) for c in mock_update.callback_query.edit_message_text.call_args_list]
+    assert any("OpenRouter API Error" in c for c in edit_calls)
+    mock_update.callback_query.edit_message_reply_markup.assert_called_once()
+
+
+@pytest.mark.asyncio
+@patch('util.telegram._schedule_auto_confirm')
+@patch('util.telegram.process_with_openrouter', new_callable=AsyncMock)
+async def test_button_callback_openrouter_retry_no_expense_id(mock_process, mock_schedule, mock_update, mock_context):
+    """Test manual_openrouter_retry generates expense_id when none provided (line 232)."""
+    mock_update.callback_query.data = "action:manual_openrouter_retry"  # no id field
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.reply_to_message = MagicMock()
+    mock_update.callback_query.message.reply_to_message.text = "50 USD food lunch"
+    mock_update.effective_message = MagicMock()
+    mock_update.effective_message.chat_id = 99999
+    mock_update.effective_message.message_id = 11111
+    mock_process.return_value = (((50.0, "USD", "Food", "lunch"), "test-model"), None)
+
+    await button_callback(mock_update, mock_context)
+
+    generated_id = "99999-11111"
+    assert generated_id in pending_expenses
+
+
+# ---------- button_callback expired expense handling ----------
+
+@pytest.mark.asyncio
+async def test_button_callback_expired_processed_different_text(mock_update, mock_context):
+    """Late press where current text differs from processed text triggers edit (line 406)."""
+    expense_id = "expired-diff-123"
+    processed_text = "⏱️ Auto-confirmed: 10 USD - Food - Snack"
+    recently_processed_expenses[expense_id] = processed_text
+    mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
+    mock_update.callback_query.message = MagicMock()
+    mock_update.callback_query.message.text = "old different text"
+
+    await button_callback(mock_update, mock_context)
+
+    mock_update.callback_query.edit_message_text.assert_called_with(processed_text)
+
+
+@pytest.mark.asyncio
+async def test_button_callback_expired_no_processed_text(mock_update, mock_context):
+    """Expired expense with no processed record shows expiry message (line 410)."""
+    expense_id = "truly-expired-999"
+    mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
+
+    await button_callback(mock_update, mock_context)
+
+    mock_update.callback_query.edit_message_text.assert_called_with(
+        "❌ This expense has expired or was already processed."
+    )
+
+
+# ---------- _get_last_commit_info ----------
+
+def test_get_last_commit_info_success():
+    """Test _get_last_commit_info returns commit summary (lines 533-542)."""
+    with patch('util.telegram.subprocess.check_output') as mock_check:
+        mock_check.side_effect = [
+            'abc1234 Fix bug',
+            'bot.py\nutil/telegram.py',
+        ]
+        result = _get_last_commit_info()
+
+    assert 'abc1234 Fix bug' in result
+    assert 'bot.py' in result
+
+
+def test_get_last_commit_info_no_changed_files():
+    """Test _get_last_commit_info when diff-tree returns no files."""
+    with patch('util.telegram.subprocess.check_output') as mock_check:
+        mock_check.side_effect = [
+            'abc1234 Fix bug',
+            '',  # no files changed
+        ]
+        result = _get_last_commit_info()
+
+    assert result == 'abc1234 Fix bug'
+
+
+def test_get_last_commit_info_error():
+    """Test _get_last_commit_info fallback on exception (lines 543-544)."""
+    with patch('util.telegram.subprocess.check_output', side_effect=Exception("git not found")):
+        result = _get_last_commit_info()
+
+    assert result == "(git info unavailable)"
+
+
+# ---------- _get_bot_info_text ----------
+
+def test_get_bot_info_text():
+    """Test _get_bot_info_text builds the info string (lines 549-557)."""
+    with patch('util.telegram._get_last_commit_info', return_value='abc1234 Add feature\nbot.py'):
+        result = _get_bot_info_text()
+
+    assert 'Bot Information' in result
+    assert 'SERVICE_URL' in result
+    assert 'LLM' in result
+    assert 'Fallbacks' in result
+    assert 'Last commit' in result

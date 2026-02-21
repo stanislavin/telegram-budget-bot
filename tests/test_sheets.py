@@ -2,7 +2,7 @@ import pytest
 import asyncio
 from unittest.mock import MagicMock, patch, AsyncMock
 from datetime import datetime, timedelta
-from util.sheets import get_google_sheets_service, save_to_sheets, get_recent_expenses, get_daily_summary
+from util.sheets import get_google_sheets_service, save_to_sheets, get_recent_expenses, get_daily_summary, delete_last_expense, get_daily_stats
 
 
 @pytest.fixture
@@ -294,10 +294,258 @@ async def test_get_daily_summary_no_data(mock_sheets_service):
     """Test daily summary when sheet has no data."""
     mock_sheet = mock_sheets_service.spreadsheets()
     mock_sheet.values().get().execute.return_value = {'values': []}
-    
+
     result = await get_daily_summary()
     summary_text, chart_path = result
-    
+
     today_formatted = datetime.now().strftime("%d/%m/%Y")
     assert summary_text == f"No expenses found for {today_formatted}."
     assert chart_path is None  # No chart when no data
+
+
+# ---------- delete_last_expense tests ----------
+
+@pytest.mark.asyncio
+async def test_delete_last_expense_success(mock_sheets_service):
+    """Test successful deletion of last expense (covers lines 78-142)."""
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            ['2024-01-15 10:00:00', '25.50', 'food', 'lunch', '', 'USD'],
+        ]
+    }
+    mock_sheet.get().execute.return_value = {
+        'sheets': [{'properties': {'title': 'Form Responses 1', 'sheetId': 0}}]
+    }
+    mock_sheet.batchUpdate().execute.return_value = {}
+
+    expense_info, error = await delete_last_expense()
+
+    assert error is None
+    assert expense_info is not None
+    assert expense_info['amount'] == '25.50'
+    assert expense_info['currency'] == 'USD'
+    assert expense_info['category'] == 'food'
+    assert expense_info['description'] == 'lunch'
+
+
+@pytest.mark.asyncio
+async def test_delete_last_expense_no_expenses(mock_sheets_service):
+    """Test delete when sheet has only a header row (covers line 90)."""
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [['timestamp', 'amount', 'category', 'description', '', 'currency']]
+    }
+
+    expense_info, error = await delete_last_expense()
+
+    assert expense_info is None
+    assert error == "No expenses to delete."
+
+
+@pytest.mark.asyncio
+async def test_delete_last_expense_empty_sheet(mock_sheets_service):
+    """Test delete when sheet has no data at all."""
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {'values': []}
+
+    expense_info, error = await delete_last_expense()
+
+    assert expense_info is None
+    assert error == "No expenses to delete."
+
+
+@pytest.mark.asyncio
+async def test_delete_last_expense_sheet_not_found(mock_sheets_service):
+    """Test delete when target sheet name is not found (covers lines 116-117)."""
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            ['2024-01-15 10:00:00', '25.50', 'food', 'lunch', '', 'USD'],
+        ]
+    }
+    mock_sheet.get().execute.return_value = {
+        'sheets': [{'properties': {'title': 'WrongSheet', 'sheetId': 1}}]
+    }
+
+    expense_info, error = await delete_last_expense()
+
+    assert expense_info is None
+    assert "not found" in error
+
+
+@pytest.mark.asyncio
+async def test_delete_last_expense_exception(mock_sheets_service):
+    """Test delete when API call raises an exception (covers lines 144-146)."""
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.side_effect = Exception("API failure")
+
+    expense_info, error = await delete_last_expense()
+
+    assert expense_info is None
+    assert "API failure" in error
+
+
+# ---------- get_daily_stats edge case tests ----------
+
+@pytest.mark.asyncio
+async def test_get_daily_stats_with_datetime_object(mock_sheets_service):
+    """Test get_daily_stats accepts a full datetime object (covers line 156)."""
+    import util.sheets
+    util.sheets._daily_stats_cache = {}
+
+    today = datetime.now()
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            [today.strftime("%Y-%m-%d %H:%M:%S"), '50.0', 'Food', 'lunch', '', 'USD'],
+        ]
+    }
+
+    currency_totals, category_totals = await get_daily_stats(today)
+
+    assert 'USD' in currency_totals
+    assert 'Food' in category_totals
+
+
+@pytest.mark.asyncio
+async def test_get_daily_stats_cache_hit(mock_sheets_service):
+    """Test that get_daily_stats returns cached result (covers line 161)."""
+    import util.sheets
+    import time as _time
+
+    target_date = datetime.now().date()
+    cache_key = target_date.strftime('%Y-%m-%d')
+    expected_result = ({'USD': 100.0}, {'food': 100.0})
+
+    util.sheets._daily_stats_cache = {cache_key: expected_result}
+    util.sheets._daily_stats_cache_time = _time.monotonic()
+
+    result = await get_daily_stats(target_date)
+
+    assert result == expected_result
+    mock_sheets_service.spreadsheets().values().get.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_daily_stats_invalid_timestamp(mock_sheets_service):
+    """Test that rows with unparseable timestamps are skipped (covers line 199)."""
+    import util.sheets
+    util.sheets._daily_stats_cache = {}
+
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            ['not-a-date', '50.0', 'Food', 'lunch', '', 'USD'],
+            ['', '20.0', 'Transport', 'bus', '', 'EUR'],
+        ]
+    }
+
+    currency_totals, category_totals = await get_daily_stats()
+
+    assert currency_totals == {}
+    assert category_totals == {}
+
+
+@pytest.mark.asyncio
+async def test_get_daily_stats_row_parse_error(mock_sheets_service):
+    """Test that rows causing ValueError are skipped (covers lines 219-220)."""
+    import util.sheets
+    util.sheets._daily_stats_cache = {}
+
+    today = datetime.now()
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            [today.strftime("%Y-%m-%d %H:%M:%S"), 'not-a-number', 'Food', 'lunch', '', 'USD'],
+        ]
+    }
+
+    currency_totals, category_totals = await get_daily_stats()
+
+    assert currency_totals == {}
+    assert category_totals == {}
+
+
+# ---------- get_recent_expenses edge case tests ----------
+
+@pytest.mark.asyncio
+async def test_get_recent_expenses_invalid_timestamp(mock_google_sheets_service):
+    """Test that rows with unparseable timestamps are skipped (covers line 316)."""
+    mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            ['not-a-date', '25.50', 'food', 'lunch', '', 'USD'],
+        ]
+    }
+
+    result = await get_recent_expenses()
+
+    assert "No expenses found in the last 2 days." in result
+
+
+@pytest.mark.asyncio
+async def test_get_recent_expenses_same_currency_accumulates(mock_google_sheets_service):
+    """Test that multiple expenses in the same currency accumulate total (covers line 331)."""
+    today = datetime.now()
+
+    mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            [today.strftime("%m/%d/%Y %H:%M:%S"), '10.00', 'food', 'lunch', '', 'USD'],
+            [today.strftime("%m/%d/%Y %H:%M:%S"), '15.00', 'food', 'coffee', '', 'USD'],
+        ]
+    }
+
+    result = await get_recent_expenses()
+
+    assert "Recent Expenses (Last 2 Days)" in result
+    assert "- 25.00 USD" in result  # Accumulated total
+
+
+@pytest.mark.asyncio
+async def test_get_recent_expenses_invalid_amount(mock_google_sheets_service):
+    """Test that rows with invalid amount values are skipped (covers lines 335-337)."""
+    today = datetime.now()
+
+    mock_google_sheets_service.spreadsheets().values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            [today.strftime("%m/%d/%Y %H:%M:%S"), 'not-a-number', 'food', 'lunch', '', 'USD'],
+        ]
+    }
+
+    result = await get_recent_expenses()
+
+    assert "No expenses found in the last 2 days." in result
+
+
+# ---------- get_daily_summary multi-currency test ----------
+
+@pytest.mark.asyncio
+async def test_get_daily_summary_multi_currency(mock_sheets_service):
+    """Test daily summary with multiple currencies omits inline currency (covers line 259)."""
+    import util.sheets
+    util.sheets._daily_stats_cache = {}
+
+    today = datetime.now()
+    mock_sheet = mock_sheets_service.spreadsheets()
+    mock_sheet.values().get().execute.return_value = {
+        'values': [
+            ['timestamp', 'amount', 'category', 'description', '', 'currency'],
+            [today.strftime("%Y-%m-%d %H:%M:%S"), '25.00', 'Food', 'lunch', '', 'USD'],
+            [today.strftime("%Y-%m-%d %H:%M:%S"), '15.00', 'Food', 'coffee', '', 'EUR'],
+        ]
+    }
+
+    summary_text, chart_path = await get_daily_summary()
+
+    assert 'Daily Summary' in summary_text
+    # With multiple currencies the format omits inline currency (line 259)
+    assert '📊 Food: 40.00\n' in summary_text
+    assert chart_path is None
