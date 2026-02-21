@@ -109,19 +109,21 @@ def mock_google_sheets_service():
     """Mock Google Sheets service for testing."""
     import util.sheets
     util.sheets._sheets_service = None  # Reset cache before test
-    with patch('util.sheets.build') as mock_build:
-        mock_service = MagicMock()
-        mock_build.return_value = mock_service
-        
-        # Configure default successful responses
-        mock_service.spreadsheets().values().append().execute.return_value = {
-            'updates': {'updatedCells': 6}
-        }
-        mock_service.spreadsheets().values().get().execute.return_value = {
-            'values': []
-        }
-        
-        yield mock_service
+    with patch('util.sheets.service_account.Credentials.from_service_account_file') as mock_creds:
+        mock_creds.return_value = MagicMock()
+        with patch('util.sheets.build') as mock_build:
+            mock_service = MagicMock()
+            mock_build.return_value = mock_service
+
+            # Configure default successful responses
+            mock_service.spreadsheets().values().append().execute.return_value = {
+                'updates': {'updatedCells': 6}
+            }
+            mock_service.spreadsheets().values().get().execute.return_value = {
+                'values': []
+            }
+
+            yield mock_service
     util.sheets._sheets_service = None  # Reset cache after test
 
 

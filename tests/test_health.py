@@ -206,11 +206,73 @@ def test_nudge_pinger_uses_correct_url(mock_sleep, mock_requests_get):
 def test_start_health_check_configuration(mock_flask_app, mock_thread):
     """Test that health check uses correct host and port configuration."""
     start_health_check()
-    
+
     # Verify Flask app.run was configured with correct host and port
     # Note: We can't directly test app.run since it's called in a thread,
     # but we can verify the configuration is passed correctly
     mock_thread.start.assert_called_once()
 
 
+# ---------- Flask route response body tests ----------
+
+def test_health_check_route_response():
+    """Test /health endpoint returns 'OK' with 200 (covers line 19)."""
+    flask_app = build_app()
+    flask_app.config['TESTING'] = True
+    client = flask_app.test_client()
+    response = client.get('/health')
+    assert response.status_code == 200
+    assert response.data == b'OK'
+
+
+def test_nudge_route_response():
+    """Test /nudge endpoint returns 'OK' with 200 (covers line 24)."""
+    flask_app = build_app()
+    flask_app.config['TESTING'] = True
+    client = flask_app.test_client()
+    response = client.get('/nudge')
+    assert response.status_code == 200
+    assert response.data == b'OK'
+
+
+# ---------- nudge_pinger unexpected exception ----------
+
+@patch('util.health.requests.get')
+@patch('util.health.time.sleep')
+def test_nudge_pinger_unexpected_exception(mock_sleep, mock_requests_get):
+    """Test nudge_pinger handles non-requests exceptions (covers lines 69-71)."""
+    mock_requests_get.side_effect = ValueError("Unexpected internal error")
+    mock_sleep.side_effect = [None, KeyboardInterrupt()]
+
+    with pytest.raises(KeyboardInterrupt):
+        nudge_pinger()
+
+    assert mock_requests_get.call_count >= 1
+
+
+def test_start_nudge_monitor_restarts_pinger():
+    """Test that monitor_and_restart creates, starts and joins a nudge thread (lines 82-91)."""
+    with patch('util.health.Thread') as MockThread:
+        monitor_instance = MagicMock()
+        MockThread.return_value = monitor_instance
+
+        start_nudge()
+
+        # Retrieve the monitor_and_restart target function
+        monitor_target = MockThread.call_args[1]['target']
+
+    # Now invoke monitor_and_restart directly, with Thread and time patched
+    with patch('util.health.Thread') as MockThread2:
+        with patch('util.health.time.sleep') as mock_sleep:
+            nudge_instance = MagicMock()
+            MockThread2.return_value = nudge_instance
+            # Break out of the infinite loop after one iteration
+            mock_sleep.side_effect = KeyboardInterrupt()
+
+            with pytest.raises(KeyboardInterrupt):
+                monitor_target()
+
+            MockThread2.assert_called_once()
+            nudge_instance.start.assert_called_once()
+            nudge_instance.join.assert_called_once()
 
