@@ -1,7 +1,8 @@
 import logging
+import os
 import requests
 import time
-from flask import Flask
+from flask import Flask, send_from_directory
 from threading import Thread
 from requests.exceptions import Timeout, RequestException
 
@@ -10,9 +11,20 @@ from util.config import SERVICE_URL, HEALTH_CHECK_PORT, HEALTH_CHECK_HOST
 logger = logging.getLogger(__name__)
 app = None
 
+_WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'web')
+
+
 def build_app():
     """Create a Flask app with all routes registered."""
     flask_app = Flask(__name__)
+
+    # Register the API blueprint
+    from web.api import api_bp
+    flask_app.register_blueprint(api_bp)
+
+    @flask_app.route('/')
+    def index():
+        return send_from_directory(_WEB_DIR, 'index.html')
 
     @flask_app.route('/health')
     def health_check():

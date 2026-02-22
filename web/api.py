@@ -1,0 +1,111 @@
+import asyncio
+import logging
+from datetime import datetime
+
+from flask import Blueprint, jsonify, request
+
+from util.postgres import get_pool
+
+logger = logging.getLogger(__name__)
+
+api_bp = Blueprint("api", __name__)
+
+
+@api_bp.route("/api/categories")
+def categories():
+    try:
+        pool = asyncio.run(get_pool())
+        rows = asyncio.run(
+            pool.fetch(
+                "SELECT DISTINCT category FROM expenses ORDER BY category"
+            )
+        )
+        return jsonify([r["category"] for r in rows])
+    except Exception as e:
+        logger.error(f"Error fetching categories: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/trends")
+def trends():
+    try:
+        date_from = request.args.get("from")
+        date_to = request.args.get("to")
+        category = request.args.get("category") or None
+        currency = request.args.get("currency", "RUB")
+        group_by = request.args.get("group_by", "month")
+
+        if group_by not in ("month", "week"):
+            return jsonify({"error": "group_by must be 'month' or 'week'"}), 400
+
+        if not date_from or not date_to:
+            return jsonify({"error": "'from' and 'to' are required"}), 400
+
+        try:
+            dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+            dt_to = datetime.strptime(date_to, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Dates must be YYYY-MM-DD"}), 400
+
+        target = currency.upper()
+
+        if target == "RUB":
+            query = """
+                SELECT
+                    DATE_TRUNC($1, e.timestamp) AS period,
+                    SUM(
+                        CASE
+                            WHEN e.currency = 'RUB' THEN e.amount
+                            ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                        END
+                    ) AS total
+                FROM expenses e
+                LEFT JOIN currency_rates cr_source
+                    ON cr_source.currency = e.currency
+                    AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
+                WHERE e.timestamp >= $2 AND e.timestamp < $3
+                    AND ($4::text IS NULL OR e.category = $4)
+                GROUP BY 1 ORDER BY 1
+            """
+            params = [group_by, dt_from, dt_to, category]
+        else:
+            query = """
+                SELECT
+                    DATE_TRUNC($1, e.timestamp) AS period,
+                    SUM(
+                        CASE
+                            WHEN e.currency = $2 THEN e.amount
+                            WHEN e.currency = 'RUB' THEN e.amount / NULLIF(cr_target.rate_to_rub, 0)
+                            ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                                 / NULLIF(cr_target.rate_to_rub, 0)
+                        END
+                    ) AS total
+                FROM expenses e
+                LEFT JOIN currency_rates cr_source
+                    ON cr_source.currency = e.currency
+                    AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
+                LEFT JOIN currency_rates cr_target
+                    ON cr_target.currency = $2
+                    AND cr_target.month = DATE_TRUNC('month', e.timestamp)::date
+                WHERE e.timestamp >= $3 AND e.timestamp < $4
+                    AND ($5::text IS NULL OR e.category = $5)
+                GROUP BY 1 ORDER BY 1
+            """
+            params = [group_by, target, dt_from, dt_to, category]
+
+        pool = asyncio.run(get_pool())
+        rows = asyncio.run(pool.fetch(query, *params))
+
+        data = []
+        for row in rows:
+            period = row["period"]
+            total = row["total"]
+            data.append({
+                "period": period.strftime("%Y-%m-%d") if period else None,
+                "total": round(float(total), 2) if total else 0,
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching trends: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
