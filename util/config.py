@@ -40,6 +40,9 @@ SERVICE_URL = os.getenv('SERVICE_URL', 'http://0.0.0.0:8000')
 HEALTH_CHECK_PORT = 8000
 HEALTH_CHECK_HOST = '0.0.0.0'
 
+# PostgreSQL Configuration (Neon)
+DATABASE_URL = os.getenv('DATABASE_URL')
+
 # Prompt Configuration
 _LLM_PROMPT = None
 

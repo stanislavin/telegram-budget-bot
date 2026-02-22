@@ -9,6 +9,8 @@ from util.telegram import (
     pending_expenses,
     recently_processed_expenses,
     expense_locks,
+    _dual_save,
+    _dual_delete,
 )
 from util.sheets import get_daily_stats
 
@@ -100,6 +102,110 @@ async def test_button_callback_manual_sheet_retry_no_data():
 async def test_get_daily_stats_error(mock_get_service):
     """Test error handling in get_daily_stats."""
     mock_get_service.side_effect = Exception("Auth error")
-    
+
     with pytest.raises(Exception, match="Auth error"):
         await get_daily_stats()
+
+
+# ---------- Dual-write helpers ----------
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
+@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+async def test_dual_save_both_succeed(mock_sheets, mock_pg):
+    """Test _dual_save calls both stores when DATABASE_URL is set."""
+    mock_sheets.return_value = (True, None)
+    mock_pg.return_value = (True, None)
+
+    result = await _dual_save(10, 'USD', 'food', 'lunch')
+
+    assert result == (True, None)
+    mock_sheets.assert_awaited_once_with(10, 'USD', 'food', 'lunch')
+    mock_pg.assert_awaited_once_with(10, 'USD', 'food', 'lunch')
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
+@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+async def test_dual_save_pg_fails_nonblocking(mock_sheets, mock_pg):
+    """Test that Postgres failure doesn't block Sheets result."""
+    mock_sheets.return_value = (True, None)
+    mock_pg.side_effect = Exception("PG down")
+
+    result = await _dual_save(10, 'USD', 'food', 'lunch')
+
+    assert result == (True, None)  # Sheets result returned
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
+@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+async def test_dual_save_pg_returns_error_tuple(mock_sheets, mock_pg):
+    """Test non-blocking log when Postgres returns an error tuple."""
+    mock_sheets.return_value = (True, None)
+    mock_pg.return_value = (None, "insert failed")
+
+    result = await _dual_save(10, 'USD', 'food', 'lunch')
+
+    assert result == (True, None)
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
+@patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
+async def test_dual_save_sheets_exception_propagates(mock_sheets, mock_pg):
+    """Test that Sheets exception is re-raised."""
+    mock_sheets.side_effect = Exception("Sheets down")
+    mock_pg.return_value = (True, None)
+
+    with pytest.raises(Exception, match="Sheets down"):
+        await _dual_save(10, 'USD', 'food', 'lunch')
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.delete_last_expense_pg', new_callable=AsyncMock, create=True)
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_dual_delete_both_succeed(mock_sheets_del, mock_pg_del):
+    """Test _dual_delete calls both stores when DATABASE_URL is set."""
+    expense_info = {'amount': '10', 'currency': 'USD', 'category': 'food', 'description': 'lunch'}
+    mock_sheets_del.return_value = (expense_info, None)
+    mock_pg_del.return_value = (expense_info, None)
+
+    result = await _dual_delete()
+
+    assert result == (expense_info, None)
+    mock_sheets_del.assert_awaited_once()
+    mock_pg_del.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.delete_last_expense_pg', new_callable=AsyncMock, create=True)
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_dual_delete_pg_fails_nonblocking(mock_sheets_del, mock_pg_del):
+    """Test that Postgres delete failure doesn't block Sheets result."""
+    expense_info = {'amount': '10', 'currency': 'USD', 'category': 'food', 'description': 'lunch'}
+    mock_sheets_del.return_value = (expense_info, None)
+    mock_pg_del.side_effect = Exception("PG down")
+
+    result = await _dual_delete()
+
+    assert result == (expense_info, None)
+
+
+@pytest.mark.asyncio
+@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram.delete_last_expense_pg', new_callable=AsyncMock, create=True)
+@patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
+async def test_dual_delete_sheets_exception_propagates(mock_sheets_del, mock_pg_del):
+    """Test that Sheets delete exception is re-raised."""
+    mock_sheets_del.side_effect = Exception("Sheets down")
+    mock_pg_del.return_value = ({'amount': '10'}, None)
+
+    with pytest.raises(Exception, match="Sheets down"):
+        await _dual_delete()

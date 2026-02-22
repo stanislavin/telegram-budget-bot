@@ -9,12 +9,48 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 
 from util.config import (
     TELEGRAM_BOT_TOKEN, get_llm_prompt, OPENROUTER_LLM_VERSION,
-    OPENROUTER_FALLBACK_MODELS, SERVICE_URL,
+    OPENROUTER_FALLBACK_MODELS, SERVICE_URL, DATABASE_URL,
 )
 from util.sheets import save_to_sheets, get_recent_expenses, get_daily_summary, get_daily_stats, delete_last_expense
 from util.openrouter import process_with_openrouter
 
+if DATABASE_URL:
+    from util.postgres import (
+        save_to_postgres, delete_last_expense_pg,
+        get_daily_stats_pg, get_daily_summary_pg, get_recent_expenses_pg,
+    )
+
 from util.message_queue import enqueue_expense, queue_size
+
+
+async def _dual_save(amount, currency, category, description):
+    """Save to Sheets (+ Postgres when configured). Returns Sheets result."""
+    if DATABASE_URL:
+        sheets_coro = save_to_sheets(amount, currency, category, description)
+        pg_coro = save_to_postgres(amount, currency, category, description)
+        (sheets_result, pg_result) = await asyncio.gather(sheets_coro, pg_coro, return_exceptions=True)
+        if isinstance(pg_result, Exception):
+            logger.warning(f"Postgres save failed (non-blocking): {pg_result}")
+        elif isinstance(pg_result, tuple) and pg_result[1] is not None:
+            logger.warning(f"Postgres save error (non-blocking): {pg_result[1]}")
+        if isinstance(sheets_result, Exception):
+            raise sheets_result
+        return sheets_result
+    return await save_to_sheets(amount, currency, category, description)
+
+
+async def _dual_delete():
+    """Delete from Sheets (+ Postgres when configured). Returns Sheets result."""
+    if DATABASE_URL:
+        sheets_coro = delete_last_expense()
+        pg_coro = delete_last_expense_pg()
+        (sheets_result, pg_result) = await asyncio.gather(sheets_coro, pg_coro, return_exceptions=True)
+        if isinstance(pg_result, Exception):
+            logger.warning(f"Postgres delete failed (non-blocking): {pg_result}")
+        if isinstance(sheets_result, Exception):
+            raise sheets_result
+        return sheets_result
+    return await delete_last_expense()
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +124,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
     await update.message.reply_text("🔄 Calculating today's expenses...")
-    summary_text, _ = await get_daily_summary()
+    _get_summary = get_daily_summary_pg if DATABASE_URL else get_daily_summary
+    summary_text, _ = await _get_summary()
     await update.message.reply_text(summary_text)
 
 
@@ -96,7 +133,7 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Delete the last expense from the sheet."""
     await update.message.reply_text("🔄 Deleting last expense...")
 
-    expense_info, error = await delete_last_expense()
+    expense_info, error = await _dual_delete()
 
     if error:
         await update.message.reply_text(f"❌ {error}")
@@ -122,8 +159,8 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
         # Get the status message
         status_message = expense_data['status_message']
 
-        # Save to sheets with retry
-        success, error = await save_to_sheets(
+        # Save to sheets (+ Postgres) with retry
+        success, error = await _dual_save(
             expense_data['amount'],
             expense_data['currency'],
             expense_data['category'],
@@ -132,7 +169,8 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
 
         if success:
             # Get daily stats
-            currency_totals, _ = await get_daily_stats()
+            _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
+            currency_totals, _ = await _get_stats()
 
             # Format totals
             totals_str = format_daily_totals(currency_totals)
@@ -266,7 +304,7 @@ async def _handle_sheet_retry(query, expense_id):
         await query.edit_message_text("❌ Unable to retry: expense data no longer available.")
         return
 
-    success, error = await save_to_sheets(
+    success, error = await _dual_save(
         expense_data['amount'],
         expense_data['currency'],
         expense_data['category'],
@@ -274,7 +312,8 @@ async def _handle_sheet_retry(query, expense_id):
     )
 
     if success:
-        currency_totals, _ = await get_daily_stats()
+        _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
+        currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
         final_text = (
@@ -298,7 +337,7 @@ async def _handle_sheet_retry(query, expense_id):
 async def _handle_confirm(query, expense_id, expense_data):
     """Handle expense confirmation."""
     await query.edit_message_text("💾 Saving to spreadsheet...")
-    success, error = await save_to_sheets(
+    success, error = await _dual_save(
         expense_data['amount'],
         expense_data['currency'],
         expense_data['category'],
@@ -306,7 +345,8 @@ async def _handle_confirm(query, expense_id, expense_data):
     )
 
     if success:
-        currency_totals, _ = await get_daily_stats()
+        _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
+        currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
         final_text = (
@@ -444,12 +484,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif message == "📅 Recent Expenses":
         await update.message.reply_text("🔄 Fetching recent expenses...")
-        expenses_text = await get_recent_expenses()
+        _get_recent = get_recent_expenses_pg if DATABASE_URL else get_recent_expenses
+        expenses_text = await _get_recent()
         await update.message.reply_text(expenses_text)
         return
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
-        summary_text, _ = await get_daily_summary()
+        _get_summary = get_daily_summary_pg if DATABASE_URL else get_daily_summary
+        summary_text, _ = await _get_summary()
         await update.message.reply_text(summary_text)
         return
     elif message == "↩️ Undo last":

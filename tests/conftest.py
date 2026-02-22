@@ -5,7 +5,7 @@ Global test configuration and shared fixtures for the telegram-budget-bot test s
 import pytest
 import os
 import tempfile
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import asyncio
 
 
@@ -23,6 +23,9 @@ def clean_pending_expenses():
     import util.sheets
     util.sheets._daily_stats_cache = {}
     util.sheets._daily_stats_cache_time = 0
+    # Reset Postgres pool singleton
+    import util.postgres
+    util.postgres._pool = None
 
 
 @pytest.fixture
@@ -125,6 +128,17 @@ def mock_google_sheets_service():
 
             yield mock_service
     util.sheets._sheets_service = None  # Reset cache after test
+
+
+@pytest.fixture
+def mock_pg_pool():
+    """Mock asyncpg connection pool for Postgres tests."""
+    import util.postgres
+    mock_pool = MagicMock()
+    util.postgres._pool = mock_pool  # Pre-set so get_pool() returns it directly
+    with patch('util.postgres.asyncpg.create_pool', new_callable=AsyncMock, return_value=mock_pool):
+        yield mock_pool
+    util.postgres._pool = None  # Reset after test
 
 
 @pytest.fixture
