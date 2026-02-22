@@ -122,3 +122,46 @@ def trends():
     except Exception as e:
         logger.error(f"Error fetching trends: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/expenses")
+def expenses():
+    """Return individual expenses for a given period."""
+    try:
+        date_from = request.args.get("from")
+        date_to = request.args.get("to")
+        category = request.args.get("category") or None
+
+        if not date_from or not date_to:
+            return jsonify({"error": "'from' and 'to' are required"}), 400
+
+        try:
+            dt_from = datetime.strptime(date_from, "%Y-%m-%d")
+            dt_to = datetime.strptime(date_to, "%Y-%m-%d")
+        except ValueError:
+            return jsonify({"error": "Dates must be YYYY-MM-DD"}), 400
+
+        query = """
+            SELECT timestamp, amount, currency, category, description
+            FROM expenses
+            WHERE timestamp >= $1 AND timestamp < $2
+              AND ($3::text IS NULL OR category = $3)
+            ORDER BY timestamp DESC
+        """
+        pool = _run(get_pool())
+        rows = _run(pool.fetch(query, dt_from, dt_to, category))
+
+        data = []
+        for row in rows:
+            data.append({
+                "timestamp": row["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                "amount": float(row["amount"]),
+                "currency": row["currency"],
+                "category": row["category"],
+                "description": row["description"],
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching expenses: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500

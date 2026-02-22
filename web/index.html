@@ -13,19 +13,21 @@
   .controls { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; align-items: flex-end; }
   .control-group { display: flex; flex-direction: column; gap: 4px; }
   .control-group label { font-size: 0.8rem; font-weight: 600; color: #666; text-transform: uppercase; }
-  select, input[type="date"] {
+  select, input[type="month"] {
     padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px;
     font-size: 0.9rem; background: #fff;
   }
-  .toggle-group { display: flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
-  .toggle-group button {
-    padding: 8px 16px; border: none; background: #fff; cursor: pointer;
-    font-size: 0.9rem; transition: background 0.2s;
-  }
-  .toggle-group button.active { background: #4f46e5; color: #fff; }
   .chart-container { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  canvas { max-height: 500px; }
+  canvas { max-height: 500px; cursor: pointer; }
   .loading { text-align: center; padding: 40px; color: #999; }
+  .expenses-panel { margin-top: 20px; background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); display: none; }
+  .expenses-panel h2 { font-size: 1.1rem; margin-bottom: 12px; }
+  .expenses-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .expenses-table th { text-align: left; padding: 8px; border-bottom: 2px solid #e5e5e5; color: #666; font-weight: 600; }
+  .expenses-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+  .expenses-table tr:hover td { background: #f9f9f9; }
+  .expenses-close { float: right; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #999; }
+  .expenses-close:hover { color: #333; }
 </style>
 </head>
 <body>
@@ -48,42 +50,57 @@
   </div>
   <div class="control-group">
     <label>From</label>
-    <input type="date" id="dateFrom">
+    <input type="month" id="monthFrom">
   </div>
   <div class="control-group">
     <label>To</label>
-    <input type="date" id="dateTo">
-  </div>
-  <div class="control-group">
-    <label>Granularity</label>
-    <div class="toggle-group">
-      <button class="active" data-value="month">Month</button>
-      <button data-value="week">Week</button>
-    </div>
+    <input type="month" id="monthTo">
   </div>
 </div>
 <div class="chart-container">
   <div class="loading" id="loading">Loading...</div>
   <canvas id="chart"></canvas>
 </div>
+<div class="expenses-panel" id="expensesPanel">
+  <button class="expenses-close" id="expensesClose">&times;</button>
+  <h2 id="expensesTitle">Expenses</h2>
+  <table class="expenses-table">
+    <thead>
+      <tr><th>Date</th><th>Amount</th><th>Category</th><th>Description</th></tr>
+    </thead>
+    <tbody id="expensesBody"></tbody>
+  </table>
+</div>
 
 <script>
 (function() {
-  const categoryEl = document.getElementById('category');
-  const currencyEl = document.getElementById('currency');
-  const dateFromEl = document.getElementById('dateFrom');
-  const dateToEl   = document.getElementById('dateTo');
-  const loadingEl  = document.getElementById('loading');
-  const toggleBtns = document.querySelectorAll('.toggle-group button');
-  let groupBy = 'month';
+  const categoryEl    = document.getElementById('category');
+  const currencyEl    = document.getElementById('currency');
+  const monthFromEl   = document.getElementById('monthFrom');
+  const monthToEl     = document.getElementById('monthTo');
+  const loadingEl     = document.getElementById('loading');
+  const expensesPanel = document.getElementById('expensesPanel');
+  const expensesTitle = document.getElementById('expensesTitle');
+  const expensesBody  = document.getElementById('expensesBody');
+  const expensesClose = document.getElementById('expensesClose');
   let chart = null;
+  let chartData = [];
 
-  // Default date range: 6 months ago to today
+  // Default: 6 months ago to current month
   const today = new Date();
   const sixMonthsAgo = new Date(today);
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-  dateFromEl.value = sixMonthsAgo.toISOString().slice(0, 10);
-  dateToEl.value = today.toISOString().slice(0, 10);
+  monthFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
+  monthToEl.value   = today.toISOString().slice(0, 7);
+
+  // Convert month input (YYYY-MM) to first/last day of month
+  function monthToFrom(val) { return val + '-01'; }
+  function monthToTo(val) {
+    const [y, m] = val.split('-').map(Number);
+    // First day of next month
+    const d = new Date(y, m, 1);
+    return d.toISOString().slice(0, 10);
+  }
 
   // Load categories
   fetch('/api/categories')
@@ -98,23 +115,13 @@
     })
     .catch(err => console.error('Failed to load categories:', err));
 
-  // Toggle buttons
-  toggleBtns.forEach(btn => {
-    btn.addEventListener('click', () => {
-      toggleBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      groupBy = btn.dataset.value;
-      fetchData();
-    });
-  });
-
-  // Fetch and render
   function fetchData() {
+    expensesPanel.style.display = 'none';
     const params = new URLSearchParams({
-      from: dateFromEl.value,
-      to: dateToEl.value,
+      from: monthToFrom(monthFromEl.value),
+      to: monthToTo(monthToEl.value),
       currency: currencyEl.value,
-      group_by: groupBy,
+      group_by: 'month',
     });
     const cat = categoryEl.value;
     if (cat) params.set('category', cat);
@@ -126,6 +133,7 @@
       .then(data => {
         loadingEl.style.display = 'none';
         if (data.error) { console.error(data.error); return; }
+        chartData = data;
         renderChart(data);
       })
       .catch(err => {
@@ -152,16 +160,18 @@
           backgroundColor: 'rgba(79, 70, 229, 0.1)',
           fill: true,
           tension: 0.3,
-          pointRadius: 4,
+          pointRadius: 5,
+          pointHoverRadius: 8,
         }],
       },
       options: {
         responsive: true,
+        onClick: handleChartClick,
         scales: {
           x: {
             type: 'time',
-            time: { unit: groupBy === 'month' ? 'month' : 'week', tooltipFormat: 'MMM yyyy' },
-            title: { display: true, text: 'Period' },
+            time: { unit: 'month', tooltipFormat: 'MMM yyyy' },
+            title: { display: true, text: 'Month' },
           },
           y: {
             beginAtZero: true,
@@ -179,12 +189,55 @@
     });
   }
 
-  // Listen for changes
-  [categoryEl, currencyEl, dateFromEl, dateToEl].forEach(el => {
+  function handleChartClick(event, elements) {
+    if (!elements.length) return;
+    const idx = elements[0].index;
+    const point = chartData[idx];
+    if (!point) return;
+
+    // period is first day of the clicked month — fetch until first day of next month
+    const periodDate = new Date(point.period);
+    const nextMonth = new Date(periodDate);
+    nextMonth.setMonth(nextMonth.getMonth() + 1);
+
+    const from = point.period;
+    const to = nextMonth.toISOString().slice(0, 10);
+
+    const params = new URLSearchParams({ from, to });
+    const cat = categoryEl.value;
+    if (cat) params.set('category', cat);
+
+    const monthLabel = periodDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+    expensesTitle.textContent = 'Expenses — ' + monthLabel;
+    expensesBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">Loading...</td></tr>';
+    expensesPanel.style.display = 'block';
+
+    fetch('/api/expenses?' + params)
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) { expensesBody.innerHTML = '<tr><td colspan="4">' + data.error + '</td></tr>'; return; }
+        if (!data.length) { expensesBody.innerHTML = '<tr><td colspan="4" style="color:#999">No expenses</td></tr>'; return; }
+        expensesBody.innerHTML = data.map(e =>
+          '<tr>' +
+          '<td>' + e.timestamp + '</td>' +
+          '<td>' + e.amount.toFixed(2) + ' ' + e.currency + '</td>' +
+          '<td>' + e.category + '</td>' +
+          '<td>' + (e.description || '') + '</td>' +
+          '</tr>'
+        ).join('');
+      })
+      .catch(err => {
+        expensesBody.innerHTML = '<tr><td colspan="4">Error loading expenses</td></tr>';
+        console.error(err);
+      });
+  }
+
+  expensesClose.addEventListener('click', () => { expensesPanel.style.display = 'none'; });
+
+  [categoryEl, currencyEl, monthFromEl, monthToEl].forEach(el => {
     el.addEventListener('change', fetchData);
   });
 
-  // Initial load
   fetchData();
 })();
 </script>
