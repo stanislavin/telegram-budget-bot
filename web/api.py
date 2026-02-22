@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from threading import Thread
 
 from flask import Blueprint, jsonify, request
 
@@ -10,12 +11,24 @@ logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
 
+# Persistent event loop running in a background thread.
+# asyncio.run() creates and *closes* a loop each call, which breaks asyncpg
+# connections that are bound to the previous (now-closed) loop.
+_loop = asyncio.new_event_loop()
+_thread = Thread(target=_loop.run_forever, daemon=True)
+_thread.start()
+
+
+def _run(coro):
+    """Submit a coroutine to the persistent loop and wait for the result."""
+    return asyncio.run_coroutine_threadsafe(coro, _loop).result()
+
 
 @api_bp.route("/api/categories")
 def categories():
     try:
-        pool = asyncio.run(get_pool())
-        rows = asyncio.run(
+        pool = _run(get_pool())
+        rows = _run(
             pool.fetch(
                 "SELECT DISTINCT category FROM expenses ORDER BY category"
             )
@@ -93,8 +106,8 @@ def trends():
             """
             params = [group_by, target, dt_from, dt_to, category]
 
-        pool = asyncio.run(get_pool())
-        rows = asyncio.run(pool.fetch(query, *params))
+        pool = _run(get_pool())
+        rows = _run(pool.fetch(query, *params))
 
         data = []
         for row in rows:
