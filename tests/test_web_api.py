@@ -191,6 +191,76 @@ class TestTrends:
         assert 'error' in json.loads(response.data)
 
 
+# ---------- GET /api/expenses ----------
+
+class TestExpenses:
+    BASE_PARAMS = '?from=2025-01-01&to=2025-02-01'
+
+    def test_returns_expense_list(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[
+            {
+                'timestamp': datetime(2025, 1, 15, 12, 30),
+                'amount': 500.0,
+                'currency': 'RUB',
+                'category': 'food',
+                'description': 'lunch',
+            },
+            {
+                'timestamp': datetime(2025, 1, 20, 9, 0),
+                'amount': 200.0,
+                'currency': 'RUB',
+                'category': 'taxi',
+                'description': 'ride home',
+            },
+        ])
+        response = test_client.get(f'/api/expenses{self.BASE_PARAMS}')
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data) == 2
+        assert data[0]['timestamp'] == '2025-01-15 12:30'
+        assert data[0]['amount'] == 500.0
+        assert data[0]['currency'] == 'RUB'
+        assert data[0]['category'] == 'food'
+        assert data[0]['description'] == 'lunch'
+
+    def test_with_category_filter(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[])
+        response = test_client.get(f'/api/expenses{self.BASE_PARAMS}&category=food')
+        assert response.status_code == 200
+        assert json.loads(response.data) == []
+
+    def test_empty_result(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[])
+        response = test_client.get(f'/api/expenses{self.BASE_PARAMS}')
+        assert response.status_code == 200
+        assert json.loads(response.data) == []
+
+    def test_missing_from_returns_400(self, client):
+        test_client, _ = client
+        response = test_client.get('/api/expenses?to=2025-02-01')
+        assert response.status_code == 400
+
+    def test_missing_to_returns_400(self, client):
+        test_client, _ = client
+        response = test_client.get('/api/expenses?from=2025-01-01')
+        assert response.status_code == 400
+
+    def test_invalid_date_returns_400(self, client):
+        test_client, _ = client
+        response = test_client.get('/api/expenses?from=bad&to=2025-02-01')
+        assert response.status_code == 400
+
+    def test_db_error_returns_500(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(side_effect=Exception('db down'))
+        response = test_client.get(f'/api/expenses{self.BASE_PARAMS}')
+        assert response.status_code == 500
+        assert 'error' in json.loads(response.data)
+
+
 # ---------- GET / (dashboard) ----------
 
 class TestDashboard:
@@ -200,3 +270,9 @@ class TestDashboard:
         assert response.status_code == 200
         assert b'Expense Trends' in response.data
         assert b'chart.js' in response.data.lower() or b'Chart' in response.data
+
+    def test_index_uses_month_inputs(self, client):
+        test_client, _ = client
+        response = test_client.get('/')
+        assert b'type="month"' in response.data
+        assert b'type="date"' not in response.data
