@@ -28,6 +28,10 @@
   .expenses-table tr:hover td { background: #f9f9f9; }
   .expenses-close { float: right; background: none; border: none; font-size: 1.2rem; cursor: pointer; color: #999; }
   .expenses-close:hover { color: #333; }
+  .expenses-table th { cursor: pointer; user-select: none; }
+  .expenses-table th:hover { color: #4f46e5; }
+  .expenses-table th .sort-arrow { font-size: 0.7rem; margin-left: 4px; color: #bbb; }
+  .expenses-table th.sorted .sort-arrow { color: #4f46e5; }
 </style>
 </head>
 <body>
@@ -66,7 +70,12 @@
   <h2 id="expensesTitle">Expenses</h2>
   <table class="expenses-table">
     <thead>
-      <tr><th>Date</th><th>Amount</th><th>Category</th><th>Description</th></tr>
+      <tr>
+        <th data-key="timestamp">Date <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="amount">Amount <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="category">Category <span class="sort-arrow">&#9650;</span></th>
+        <th data-key="description">Description <span class="sort-arrow">&#9650;</span></th>
+      </tr>
     </thead>
     <tbody id="expensesBody"></tbody>
   </table>
@@ -85,6 +94,9 @@
   const expensesClose = document.getElementById('expensesClose');
   let chart = null;
   let chartData = [];
+  let expensesList = [];
+  let sortKey = 'timestamp';
+  let sortAsc = true;
 
   // Default: 6 months ago to current month
   const today = new Date();
@@ -217,20 +229,57 @@
       .then(data => {
         if (data.error) { expensesBody.innerHTML = '<tr><td colspan="4">' + data.error + '</td></tr>'; return; }
         if (!data.length) { expensesBody.innerHTML = '<tr><td colspan="4" style="color:#999">No expenses</td></tr>'; return; }
-        expensesBody.innerHTML = data.map(e =>
-          '<tr>' +
-          '<td>' + e.timestamp + '</td>' +
-          '<td>' + e.amount.toFixed(2) + ' ' + e.currency + '</td>' +
-          '<td>' + e.category + '</td>' +
-          '<td>' + (e.description || '') + '</td>' +
-          '</tr>'
-        ).join('');
+        expensesList = data;
+        sortKey = 'timestamp';
+        sortAsc = true;
+        renderExpenses();
       })
       .catch(err => {
         expensesBody.innerHTML = '<tr><td colspan="4">Error loading expenses</td></tr>';
         console.error(err);
       });
   }
+
+  function renderExpenses() {
+    const sorted = [...expensesList].sort((a, b) => {
+      let va = a[sortKey], vb = b[sortKey];
+      if (sortKey === 'amount') { va = Number(va); vb = Number(vb); }
+      else { va = (va || '').toString().toLowerCase(); vb = (vb || '').toString().toLowerCase(); }
+      if (va < vb) return sortAsc ? -1 : 1;
+      if (va > vb) return sortAsc ? 1 : -1;
+      return 0;
+    });
+    expensesBody.innerHTML = sorted.map(e =>
+      '<tr>' +
+      '<td>' + e.timestamp + '</td>' +
+      '<td>' + e.amount.toFixed(2) + ' ' + e.currency + '</td>' +
+      '<td>' + e.category + '</td>' +
+      '<td>' + (e.description || '') + '</td>' +
+      '</tr>'
+    ).join('');
+    // Update header arrows
+    document.querySelectorAll('.expenses-table th').forEach(th => {
+      const arrow = th.querySelector('.sort-arrow');
+      if (!arrow) return;
+      if (th.dataset.key === sortKey) {
+        th.classList.add('sorted');
+        arrow.textContent = sortAsc ? '\u25B2' : '\u25BC';
+      } else {
+        th.classList.remove('sorted');
+        arrow.textContent = '\u25B2';
+      }
+    });
+  }
+
+  // Column header click → sort
+  document.querySelectorAll('.expenses-table th[data-key]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.key;
+      if (sortKey === key) { sortAsc = !sortAsc; }
+      else { sortKey = key; sortAsc = true; }
+      if (expensesList.length) renderExpenses();
+    });
+  });
 
   expensesClose.addEventListener('click', () => { expensesPanel.style.display = 'none'; });
 
