@@ -3,20 +3,34 @@ import logging
 from datetime import datetime
 from threading import Thread
 
+import asyncpg
 from flask import Blueprint, jsonify, request
 
-from util.postgres import get_pool
+from util.config import DATABASE_URL
+from util.postgres import _clean_dsn
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
 
 # Persistent event loop running in a background thread.
-# asyncio.run() creates and *closes* a loop each call, which breaks asyncpg
-# connections that are bound to the previous (now-closed) loop.
+# The web API needs its own loop AND its own pool so it doesn't interfere
+# with the bot's main event loop (asyncpg pools are bound to the loop that
+# created them).
 _loop = asyncio.new_event_loop()
 _thread = Thread(target=_loop.run_forever, daemon=True)
 _thread.start()
+
+_web_pool = None
+
+
+async def _get_web_pool():
+    """Return a connection pool dedicated to the web API, created on _loop."""
+    global _web_pool
+    if _web_pool is None:
+        dsn = _clean_dsn(DATABASE_URL)
+        _web_pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
+    return _web_pool
 
 
 def _run(coro):
@@ -27,7 +41,7 @@ def _run(coro):
 @api_bp.route("/api/categories")
 def categories():
     try:
-        pool = _run(get_pool())
+        pool = _run(_get_web_pool())
         rows = _run(
             pool.fetch(
                 "SELECT DISTINCT category FROM expenses ORDER BY category"
@@ -106,7 +120,7 @@ def trends():
             """
             params = [group_by, target, dt_from, dt_to, category]
 
-        pool = _run(get_pool())
+        pool = _run(_get_web_pool())
         rows = _run(pool.fetch(query, *params))
 
         data = []
@@ -148,7 +162,7 @@ def expenses():
               AND ($3::text IS NULL OR category = $3)
             ORDER BY timestamp DESC
         """
-        pool = _run(get_pool())
+        pool = _run(_get_web_pool())
         rows = _run(pool.fetch(query, dt_from, dt_to, category))
 
         data = []
