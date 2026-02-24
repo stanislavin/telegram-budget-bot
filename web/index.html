@@ -279,6 +279,7 @@
       cats.forEach(c => selectedCategories.add(c));
       renderCategoryItems();
       updateCategoryBtnLabel();
+      fetchData();
     })
     .catch(err => console.error('Failed to load categories:', err));
 
@@ -577,8 +578,6 @@
   [currencyEl, monthFromEl, monthToEl].forEach(el => {
     el.addEventListener('change', fetchData);
   });
-
-  fetchData();
 })();
 </script>
 </body>
