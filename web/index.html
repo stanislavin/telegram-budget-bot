@@ -164,8 +164,9 @@
   let sortKey = 'timestamp';
   let sortAsc = true;
   let allCategories = [];
-  let selectedCategories = new Set(); // empty = all
+  let selectedCategories = new Set(); // explicit: contains selected category names
   let viewMode = 'sum'; // 'sum' or 'compare'
+  let highlightedCategory = null; // for legend click in compare mode
 
   // Default: 6 months ago to current month
   const today = new Date();
@@ -184,7 +185,9 @@
   // --- Multi-select dropdown ---
   function updateCategoryBtnLabel() {
     const span = categoryBtn.querySelector('span');
-    if (selectedCategories.size === 0 || selectedCategories.size === allCategories.length) {
+    if (selectedCategories.size === 0) {
+      span.textContent = 'None selected';
+    } else if (selectedCategories.size === allCategories.length) {
       span.textContent = 'All categories';
     } else if (selectedCategories.size === 1) {
       span.textContent = [...selectedCategories][0];
@@ -201,20 +204,12 @@
       const cb = document.createElement('input');
       cb.type = 'checkbox';
       cb.value = cat;
-      cb.checked = selectedCategories.has(cat) || selectedCategories.size === 0;
+      cb.checked = selectedCategories.has(cat);
       cb.addEventListener('change', () => {
-        if (selectedCategories.size === 0) {
-          // Was "all" — user unchecked one, so select all except this one
-          allCategories.forEach(c => { if (c !== cat) selectedCategories.add(c); });
-        } else if (cb.checked) {
+        if (cb.checked) {
           selectedCategories.add(cat);
-          if (selectedCategories.size === allCategories.length) selectedCategories.clear();
         } else {
           selectedCategories.delete(cat);
-          if (selectedCategories.size === 0) {
-            // Don't allow empty, revert to all
-            selectedCategories.clear();
-          }
         }
         updateCheckboxStates();
         updateCategoryBtnLabel();
@@ -230,7 +225,7 @@
   function updateCheckboxStates() {
     const cbs = categoryItems.querySelectorAll('input[type="checkbox"]');
     cbs.forEach(cb => {
-      cb.checked = selectedCategories.has(cb.value) || selectedCategories.size === 0;
+      cb.checked = selectedCategories.has(cb.value);
     });
   }
 
@@ -246,14 +241,13 @@
   });
 
   catSelectAll.addEventListener('click', () => {
-    selectedCategories.clear();
+    allCategories.forEach(c => selectedCategories.add(c));
     updateCheckboxStates();
     updateCategoryBtnLabel();
     fetchData();
   });
 
   catClear.addEventListener('click', () => {
-    // Clear means deselect all — but we keep "all" semantic (empty set)
     selectedCategories.clear();
     updateCheckboxStates();
     updateCategoryBtnLabel();
@@ -282,18 +276,29 @@
     .then(r => r.json())
     .then(cats => {
       allCategories = cats;
+      cats.forEach(c => selectedCategories.add(c));
       renderCategoryItems();
       updateCategoryBtnLabel();
     })
     .catch(err => console.error('Failed to load categories:', err));
 
   function getSelectedCategoriesParam() {
-    if (selectedCategories.size === 0) return '';
+    if (selectedCategories.size === allCategories.length) return ''; // all selected = no filter
     return [...selectedCategories].join(',');
   }
 
   function fetchData() {
     expensesPanel.style.display = 'none';
+    highlightedCategory = null;
+
+    if (selectedCategories.size === 0) {
+      if (chart) chart.destroy();
+      chart = null;
+      chartData = [];
+      loadingEl.style.display = 'none';
+      return;
+    }
+
     const split = viewMode === 'compare';
     const params = new URLSearchParams({
       from: monthToFrom(monthFromEl.value),
@@ -392,6 +397,8 @@
       data: periods.map(p => byCat[cat][p] || 0),
       borderColor: COLORS[i % COLORS.length],
       backgroundColor: COLORS[i % COLORS.length] + '1a',
+      _origBorderColor: COLORS[i % COLORS.length],
+      _origBackgroundColor: COLORS[i % COLORS.length] + '1a',
       fill: false,
       tension: 0.3,
       pointRadius: 5,
@@ -418,7 +425,45 @@
           },
         },
         plugins: {
-          legend: { display: true },
+          legend: {
+            display: true,
+            onClick: (e, legendItem, legend) => {
+              const ci = legend.chart;
+              const clickedIndex = legendItem.datasetIndex;
+              const clickedLabel = ci.data.datasets[clickedIndex].label;
+
+              if (highlightedCategory === clickedLabel) {
+                // Clicking the same one again — restore all to full opacity
+                highlightedCategory = null;
+                ci.data.datasets.forEach(ds => {
+                  ds.borderColor = ds._origBorderColor || ds.borderColor;
+                  ds.backgroundColor = ds._origBackgroundColor || ds.backgroundColor;
+                  ds.borderWidth = 2;
+                  ds.pointRadius = 5;
+                });
+              } else {
+                highlightedCategory = clickedLabel;
+                ci.data.datasets.forEach((ds, i) => {
+                  if (!ds._origBorderColor) {
+                    ds._origBorderColor = ds.borderColor;
+                    ds._origBackgroundColor = ds.backgroundColor;
+                  }
+                  if (i === clickedIndex) {
+                    ds.borderColor = ds._origBorderColor;
+                    ds.backgroundColor = ds._origBackgroundColor;
+                    ds.borderWidth = 3;
+                    ds.pointRadius = 6;
+                  } else {
+                    ds.borderColor = ds._origBorderColor + '40';
+                    ds.backgroundColor = ds._origBackgroundColor.replace('1a', '08');
+                    ds.borderWidth = 1;
+                    ds.pointRadius = 3;
+                  }
+                });
+              }
+              ci.update();
+            },
+          },
           tooltip: {
             callbacks: {
               label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' ' + currency,
