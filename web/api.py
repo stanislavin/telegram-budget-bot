@@ -58,7 +58,10 @@ def trends():
     try:
         date_from = request.args.get("from")
         date_to = request.args.get("to")
-        category = request.args.get("category") or None
+        # Support both old 'category' and new 'categories' param
+        categories_raw = request.args.get("categories") or request.args.get("category") or ""
+        cat_list = [c.strip() for c in categories_raw.split(",") if c.strip()]
+        split = request.args.get("split", "false").lower() in ("true", "1")
         currency = request.args.get("currency", "RUB")
         group_by = request.args.get("group_by", "month")
 
@@ -76,10 +79,28 @@ def trends():
 
         target = currency.upper()
 
+        # Build category filter clause and params
+        # Parameter numbering depends on target currency
         if target == "RUB":
-            query = """
+            base_idx = 4  # $1=group_by, $2=dt_from, $3=dt_to
+        else:
+            base_idx = 5  # $1=group_by, $2=target, $3=dt_from, $4=dt_to
+
+        if cat_list:
+            cat_placeholders = ", ".join(
+                f"${base_idx + i}" for i in range(len(cat_list))
+            )
+            cat_clause = f"AND e.category IN ({cat_placeholders})"
+        else:
+            cat_clause = ""
+
+        extra_select = ", e.category" if split else ""
+        extra_group = ", e.category" if split else ""
+
+        if target == "RUB":
+            query = f"""
                 SELECT
-                    DATE_TRUNC($1, e.timestamp) AS period,
+                    DATE_TRUNC($1, e.timestamp) AS period{extra_select},
                     SUM(
                         CASE
                             WHEN e.currency = 'RUB' THEN e.amount
@@ -91,14 +112,14 @@ def trends():
                     ON cr_source.currency = e.currency
                     AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
                 WHERE e.timestamp >= $2 AND e.timestamp < $3
-                    AND ($4::text IS NULL OR e.category = $4)
-                GROUP BY 1 ORDER BY 1
+                    {cat_clause}
+                GROUP BY 1{extra_group} ORDER BY 1
             """
-            params = [group_by, dt_from, dt_to, category]
+            params = [group_by, dt_from, dt_to] + cat_list
         else:
-            query = """
+            query = f"""
                 SELECT
-                    DATE_TRUNC($1, e.timestamp) AS period,
+                    DATE_TRUNC($1, e.timestamp) AS period{extra_select},
                     SUM(
                         CASE
                             WHEN e.currency = $2 THEN e.amount
@@ -115,10 +136,10 @@ def trends():
                     ON cr_target.currency = $2
                     AND cr_target.month = DATE_TRUNC('month', e.timestamp)::date
                 WHERE e.timestamp >= $3 AND e.timestamp < $4
-                    AND ($5::text IS NULL OR e.category = $5)
-                GROUP BY 1 ORDER BY 1
+                    {cat_clause}
+                GROUP BY 1{extra_group} ORDER BY 1
             """
-            params = [group_by, target, dt_from, dt_to, category]
+            params = [group_by, target, dt_from, dt_to] + cat_list
 
         pool = _run(_get_web_pool())
         rows = _run(pool.fetch(query, *params))
@@ -127,10 +148,13 @@ def trends():
         for row in rows:
             period = row["period"]
             total = row["total"]
-            data.append({
+            entry = {
                 "period": period.strftime("%Y-%m-%d") if period else None,
                 "total": round(float(total), 2) if total else 0,
-            })
+            }
+            if split:
+                entry["category"] = row["category"]
+            data.append(entry)
 
         return jsonify(data)
     except Exception as e:
@@ -144,7 +168,8 @@ def expenses():
     try:
         date_from = request.args.get("from")
         date_to = request.args.get("to")
-        category = request.args.get("category") or None
+        categories_raw = request.args.get("categories") or request.args.get("category") or ""
+        cat_list = [c.strip() for c in categories_raw.split(",") if c.strip()]
 
         if not date_from or not date_to:
             return jsonify({"error": "'from' and 'to' are required"}), 400
@@ -155,15 +180,21 @@ def expenses():
         except ValueError:
             return jsonify({"error": "Dates must be YYYY-MM-DD"}), 400
 
-        query = """
+        if cat_list:
+            cat_placeholders = ", ".join(f"${3 + i}" for i in range(len(cat_list)))
+            cat_clause = f"AND category IN ({cat_placeholders})"
+        else:
+            cat_clause = ""
+
+        query = f"""
             SELECT timestamp, amount, currency, category, description
             FROM expenses
             WHERE timestamp >= $1 AND timestamp < $2
-              AND ($3::text IS NULL OR category = $3)
+              {cat_clause}
             ORDER BY timestamp DESC
         """
         pool = _run(_get_web_pool())
-        rows = _run(pool.fetch(query, dt_from, dt_to, category))
+        rows = _run(pool.fetch(query, dt_from, dt_to, *cat_list))
 
         data = []
         for row in rows:

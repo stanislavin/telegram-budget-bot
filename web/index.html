@@ -32,16 +32,73 @@
   .expenses-table th:hover { color: #4f46e5; }
   .expenses-table th .sort-arrow { font-size: 0.7rem; margin-left: 4px; color: #bbb; }
   .expenses-table th.sorted .sort-arrow { color: #4f46e5; }
+
+  /* Multi-select dropdown */
+  .multi-select { position: relative; min-width: 170px; }
+  .multi-select-btn {
+    padding: 8px 12px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 0.9rem; background: #fff; cursor: pointer;
+    display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    width: 100%;
+  }
+  .multi-select-btn:hover { border-color: #999; }
+  .multi-select-btn .arrow { font-size: 0.6rem; color: #999; }
+  .multi-select-dropdown {
+    display: none; position: absolute; top: 100%; left: 0; right: 0;
+    background: #fff; border: 1px solid #ccc; border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 100;
+    max-height: 260px; overflow-y: auto; margin-top: 4px;
+  }
+  .multi-select-dropdown.open { display: block; }
+  .multi-select-actions { display: flex; gap: 8px; padding: 8px 12px; border-bottom: 1px solid #eee; }
+  .multi-select-actions button {
+    background: none; border: none; font-size: 0.8rem; color: #4f46e5;
+    cursor: pointer; padding: 0;
+  }
+  .multi-select-actions button:hover { text-decoration: underline; }
+  .multi-select-item {
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    cursor: pointer; font-size: 0.9rem;
+  }
+  .multi-select-item:hover { background: #f5f5ff; }
+  .multi-select-item input { cursor: pointer; }
+
+  /* View mode toggle */
+  .view-toggle { display: flex; border: 1px solid #ccc; border-radius: 6px; overflow: hidden; }
+  .view-toggle button {
+    padding: 8px 14px; border: none; background: #fff; font-size: 0.85rem;
+    cursor: pointer; color: #666; transition: all 0.15s;
+  }
+  .view-toggle button + button { border-left: 1px solid #ccc; }
+  .view-toggle button.active { background: #4f46e5; color: #fff; }
+  .view-toggle button:hover:not(.active) { background: #f5f5ff; }
 </style>
 </head>
 <body>
 <h1>Expense Trends</h1>
 <div class="controls">
   <div class="control-group">
-    <label>Category</label>
-    <select id="category">
-      <option value="">All categories</option>
-    </select>
+    <label>Categories</label>
+    <div class="multi-select" id="categorySelect">
+      <button class="multi-select-btn" id="categoryBtn">
+        <span>All categories</span>
+        <span class="arrow">&#9660;</span>
+      </button>
+      <div class="multi-select-dropdown" id="categoryDropdown">
+        <div class="multi-select-actions">
+          <button id="catSelectAll">Select all</button>
+          <button id="catClear">Clear</button>
+        </div>
+        <div id="categoryItems"></div>
+      </div>
+    </div>
+  </div>
+  <div class="control-group">
+    <label>View</label>
+    <div class="view-toggle">
+      <button class="active" id="viewSum" data-mode="sum">Sum</button>
+      <button id="viewCompare" data-mode="compare">Compare</button>
+    </div>
   </div>
   <div class="control-group">
     <label>Currency</label>
@@ -83,7 +140,8 @@
 
 <script>
 (function() {
-  const categoryEl    = document.getElementById('category');
+  const COLORS = ['#4f46e5', '#e11d48', '#059669', '#d97706', '#7c3aed', '#0891b2', '#be123c', '#65a30d', '#c026d3', '#0d9488'];
+
   const currencyEl    = document.getElementById('currency');
   const monthFromEl   = document.getElementById('monthFrom');
   const monthToEl     = document.getElementById('monthTo');
@@ -92,11 +150,22 @@
   const expensesTitle = document.getElementById('expensesTitle');
   const expensesBody  = document.getElementById('expensesBody');
   const expensesClose = document.getElementById('expensesClose');
+  const categoryBtn   = document.getElementById('categoryBtn');
+  const categoryDropdown = document.getElementById('categoryDropdown');
+  const categoryItems = document.getElementById('categoryItems');
+  const catSelectAll  = document.getElementById('catSelectAll');
+  const catClear      = document.getElementById('catClear');
+  const viewSumBtn    = document.getElementById('viewSum');
+  const viewCompareBtn = document.getElementById('viewCompare');
+
   let chart = null;
   let chartData = [];
   let expensesList = [];
   let sortKey = 'timestamp';
   let sortAsc = true;
+  let allCategories = [];
+  let selectedCategories = new Set(); // empty = all
+  let viewMode = 'sum'; // 'sum' or 'compare'
 
   // Default: 6 months ago to current month
   const today = new Date();
@@ -105,38 +174,136 @@
   monthFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
   monthToEl.value   = today.toISOString().slice(0, 7);
 
-  // Convert month input (YYYY-MM) to first/last day of month
   function monthToFrom(val) { return val + '-01'; }
   function monthToTo(val) {
     const [y, m] = val.split('-').map(Number);
-    // First day of next month
     const d = new Date(y, m, 1);
     return d.toISOString().slice(0, 10);
   }
+
+  // --- Multi-select dropdown ---
+  function updateCategoryBtnLabel() {
+    const span = categoryBtn.querySelector('span');
+    if (selectedCategories.size === 0 || selectedCategories.size === allCategories.length) {
+      span.textContent = 'All categories';
+    } else if (selectedCategories.size === 1) {
+      span.textContent = [...selectedCategories][0];
+    } else {
+      span.textContent = selectedCategories.size + ' selected';
+    }
+  }
+
+  function renderCategoryItems() {
+    categoryItems.innerHTML = '';
+    allCategories.forEach(cat => {
+      const item = document.createElement('label');
+      item.className = 'multi-select-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = cat;
+      cb.checked = selectedCategories.has(cat) || selectedCategories.size === 0;
+      cb.addEventListener('change', () => {
+        if (selectedCategories.size === 0) {
+          // Was "all" — user unchecked one, so select all except this one
+          allCategories.forEach(c => { if (c !== cat) selectedCategories.add(c); });
+        } else if (cb.checked) {
+          selectedCategories.add(cat);
+          if (selectedCategories.size === allCategories.length) selectedCategories.clear();
+        } else {
+          selectedCategories.delete(cat);
+          if (selectedCategories.size === 0) {
+            // Don't allow empty, revert to all
+            selectedCategories.clear();
+          }
+        }
+        updateCheckboxStates();
+        updateCategoryBtnLabel();
+        fetchData();
+      });
+      const label = document.createTextNode(cat);
+      item.appendChild(cb);
+      item.appendChild(label);
+      categoryItems.appendChild(item);
+    });
+  }
+
+  function updateCheckboxStates() {
+    const cbs = categoryItems.querySelectorAll('input[type="checkbox"]');
+    cbs.forEach(cb => {
+      cb.checked = selectedCategories.has(cb.value) || selectedCategories.size === 0;
+    });
+  }
+
+  categoryBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    categoryDropdown.classList.toggle('open');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.multi-select')) {
+      categoryDropdown.classList.remove('open');
+    }
+  });
+
+  catSelectAll.addEventListener('click', () => {
+    selectedCategories.clear();
+    updateCheckboxStates();
+    updateCategoryBtnLabel();
+    fetchData();
+  });
+
+  catClear.addEventListener('click', () => {
+    // Clear means deselect all — but we keep "all" semantic (empty set)
+    selectedCategories.clear();
+    updateCheckboxStates();
+    updateCategoryBtnLabel();
+    fetchData();
+  });
+
+  // --- View mode toggle ---
+  viewSumBtn.addEventListener('click', () => {
+    if (viewMode === 'sum') return;
+    viewMode = 'sum';
+    viewSumBtn.classList.add('active');
+    viewCompareBtn.classList.remove('active');
+    fetchData();
+  });
+
+  viewCompareBtn.addEventListener('click', () => {
+    if (viewMode === 'compare') return;
+    viewMode = 'compare';
+    viewCompareBtn.classList.add('active');
+    viewSumBtn.classList.remove('active');
+    fetchData();
+  });
 
   // Load categories
   fetch('/api/categories')
     .then(r => r.json())
     .then(cats => {
-      cats.forEach(c => {
-        const opt = document.createElement('option');
-        opt.value = c;
-        opt.textContent = c;
-        categoryEl.appendChild(opt);
-      });
+      allCategories = cats;
+      renderCategoryItems();
+      updateCategoryBtnLabel();
     })
     .catch(err => console.error('Failed to load categories:', err));
 
+  function getSelectedCategoriesParam() {
+    if (selectedCategories.size === 0) return '';
+    return [...selectedCategories].join(',');
+  }
+
   function fetchData() {
     expensesPanel.style.display = 'none';
+    const split = viewMode === 'compare';
     const params = new URLSearchParams({
       from: monthToFrom(monthFromEl.value),
       to: monthToTo(monthToEl.value),
       currency: currencyEl.value,
       group_by: 'month',
     });
-    const cat = categoryEl.value;
-    if (cat) params.set('category', cat);
+    const cats = getSelectedCategoriesParam();
+    if (cats) params.set('categories', cats);
+    if (split) params.set('split', 'true');
 
     loadingEl.style.display = 'block';
 
@@ -146,7 +313,11 @@
         loadingEl.style.display = 'none';
         if (data.error) { console.error(data.error); return; }
         chartData = data;
-        renderChart(data);
+        if (split) {
+          renderChartCompare(data);
+        } else {
+          renderChartSum(data);
+        }
       })
       .catch(err => {
         loadingEl.style.display = 'none';
@@ -154,7 +325,7 @@
       });
   }
 
-  function renderChart(data) {
+  function renderChartSum(data) {
     const labels = data.map(d => d.period);
     const values = data.map(d => d.total);
     const currency = currencyEl.value;
@@ -191,6 +362,7 @@
           },
         },
         plugins: {
+          legend: { display: false },
           tooltip: {
             callbacks: {
               label: ctx => ctx.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' ' + currency,
@@ -201,26 +373,101 @@
     });
   }
 
+  function renderChartCompare(data) {
+    // Group data by category
+    const byCat = {};
+    const allPeriods = new Set();
+    data.forEach(d => {
+      allPeriods.add(d.period);
+      if (!byCat[d.category]) byCat[d.category] = {};
+      byCat[d.category][d.period] = d.total;
+    });
+
+    const periods = [...allPeriods].sort();
+    const categories = Object.keys(byCat).sort();
+    const currency = currencyEl.value;
+
+    const datasets = categories.map((cat, i) => ({
+      label: cat,
+      data: periods.map(p => byCat[cat][p] || 0),
+      borderColor: COLORS[i % COLORS.length],
+      backgroundColor: COLORS[i % COLORS.length] + '1a',
+      fill: false,
+      tension: 0.3,
+      pointRadius: 5,
+      pointHoverRadius: 8,
+    }));
+
+    if (chart) chart.destroy();
+
+    chart = new Chart(document.getElementById('chart'), {
+      type: 'line',
+      data: { labels: periods, datasets },
+      options: {
+        responsive: true,
+        onClick: handleChartClick,
+        scales: {
+          x: {
+            type: 'time',
+            time: { unit: 'month', tooltipFormat: 'MMM yyyy' },
+            title: { display: true, text: 'Month' },
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: currency },
+          },
+        },
+        plugins: {
+          legend: { display: true },
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y.toLocaleString(undefined, { maximumFractionDigits: 0 }) + ' ' + currency,
+            },
+          },
+        },
+      },
+    });
+  }
+
   function handleChartClick(event, elements) {
     if (!elements.length) return;
-    const idx = elements[0].index;
-    const point = chartData[idx];
-    if (!point) return;
+    const el = elements[0];
+    const idx = el.index;
 
-    // period is first day of the clicked month — fetch until first day of next month
-    const periodDate = new Date(point.period);
+    let periodStr, clickedCategory;
+
+    if (viewMode === 'compare') {
+      // In compare mode, get the period from labels and category from dataset
+      periodStr = chart.data.labels[idx];
+      clickedCategory = chart.data.datasets[el.datasetIndex].label;
+    } else {
+      const point = chartData[idx];
+      if (!point) return;
+      periodStr = point.period;
+      clickedCategory = null;
+    }
+
+    const periodDate = new Date(periodStr);
     const nextMonth = new Date(periodDate);
     nextMonth.setMonth(nextMonth.getMonth() + 1);
 
-    const from = point.period;
+    const from = periodStr;
     const to = nextMonth.toISOString().slice(0, 10);
 
     const params = new URLSearchParams({ from, to });
-    const cat = categoryEl.value;
-    if (cat) params.set('category', cat);
+
+    if (viewMode === 'compare' && clickedCategory) {
+      // In compare mode, pass the specific category
+      params.set('categories', clickedCategory);
+    } else {
+      // In sum mode, pass all selected categories
+      const cats = getSelectedCategoriesParam();
+      if (cats) params.set('categories', cats);
+    }
 
     const monthLabel = periodDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
-    expensesTitle.textContent = 'Expenses — ' + monthLabel;
+    const titleSuffix = (viewMode === 'compare' && clickedCategory) ? ' — ' + clickedCategory : '';
+    expensesTitle.textContent = 'Expenses — ' + monthLabel + titleSuffix;
     expensesBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#999">Loading...</td></tr>';
     expensesPanel.style.display = 'block';
 
@@ -257,7 +504,6 @@
       '<td>' + (e.description || '') + '</td>' +
       '</tr>'
     ).join('');
-    // Update header arrows
     document.querySelectorAll('.expenses-table th').forEach(th => {
       const arrow = th.querySelector('.sort-arrow');
       if (!arrow) return;
@@ -271,7 +517,7 @@
     });
   }
 
-  // Column header click → sort
+  // Column header click -> sort
   document.querySelectorAll('.expenses-table th[data-key]').forEach(th => {
     th.addEventListener('click', () => {
       const key = th.dataset.key;
@@ -283,7 +529,7 @@
 
   expensesClose.addEventListener('click', () => { expensesPanel.style.display = 'none'; });
 
-  [categoryEl, currencyEl, monthFromEl, monthToEl].forEach(el => {
+  [currencyEl, monthFromEl, monthToEl].forEach(el => {
     el.addEventListener('change', fetchData);
   });
 

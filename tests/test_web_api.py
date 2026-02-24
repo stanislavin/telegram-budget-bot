@@ -183,6 +183,46 @@ class TestTrends:
         assert response.status_code == 400
         assert 'group_by' in json.loads(response.data)['error']
 
+    def test_multi_categories_filter(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[
+            {'period': datetime(2025, 1, 1), 'total': 8000.0},
+        ])
+        response = test_client.get(
+            f'/api/trends{self.BASE_PARAMS}&categories=food,taxi'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data) == 1
+        assert data[0]['total'] == 8000.0
+
+    def test_split_mode_returns_category(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[
+            {'period': datetime(2025, 1, 1), 'total': 5000.0, 'category': 'food'},
+            {'period': datetime(2025, 1, 1), 'total': 3000.0, 'category': 'taxi'},
+        ])
+        response = test_client.get(
+            f'/api/trends{self.BASE_PARAMS}&categories=food,taxi&split=true'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert len(data) == 2
+        assert data[0]['category'] == 'food'
+        assert data[1]['category'] == 'taxi'
+
+    def test_split_false_no_category_field(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[
+            {'period': datetime(2025, 1, 1), 'total': 8000.0},
+        ])
+        response = test_client.get(
+            f'/api/trends{self.BASE_PARAMS}&categories=food,taxi&split=false'
+        )
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert 'category' not in data[0]
+
     def test_db_error_returns_500(self, client):
         test_client, mock_pool = client
         mock_pool.fetch = MagicMock(side_effect=Exception('query failed'))
@@ -228,6 +268,13 @@ class TestExpenses:
         test_client, mock_pool = client
         mock_pool.fetch = MagicMock(return_value=[])
         response = test_client.get(f'/api/expenses{self.BASE_PARAMS}&category=food')
+        assert response.status_code == 200
+        assert json.loads(response.data) == []
+
+    def test_with_multi_categories_filter(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[])
+        response = test_client.get(f'/api/expenses{self.BASE_PARAMS}&categories=food,taxi')
         assert response.status_code == 200
         assert json.loads(response.data) == []
 
