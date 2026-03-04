@@ -149,6 +149,11 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("APK not available. Please build it first with `make build-apk`.")
 
 
+async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the service URL link."""
+    await update.message.reply_text(f"🌐 <b>Service URL:</b>\n<code>{SERVICE_URL}</code>", parse_mode='HTML')
+
+
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
     await update.message.reply_text("🔄 Calculating today's expenses...")
@@ -645,6 +650,7 @@ def create_application():
     application.add_handler(CommandHandler("summary", summary_command))
     application.add_handler(CommandHandler("undo", undo_command))
     application.add_handler(CommandHandler("app", app_command))
+    application.add_handler(CommandHandler("dashboard", dashboard_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     
