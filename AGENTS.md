@@ -1,36 +1,127 @@
-# Repository Guidelines
+# Repository Guidelines for Agentic Development
+*(≈ 150 lines – concise but comprehensive)*
 
-## Project Structure & Module Organization
-- `bot.py` is the entry point; it wires the health server, nudge pinger, and Telegram polling loop.
-- `util/` holds core modules: `config.py` (env + prompt loading), `telegram.py` (bot handlers), `sheets.py` (Google Sheets I/O), `openrouter.py` (LLM calls), `scheduler.py` (daily summaries), and `health.py` (Flask health/nudge services).
-- `tests/` contains the pytest suite (`test_*.py`) plus shared fixtures in `conftest.py`.
-- Supporting files: `prompt.txt` (LLM prompt), `Procfile` (process declaration), `scripts/run_tests_with_coverage.sh`, coverage outputs in `htmlcov/` and `coverage.xml`.
+---
 
-## Build, Test, and Development Commands
-- Create a venv and install deps: `python -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt -r requirements-test.txt`.
-- Run the bot locally (requires .env + credentials): `python bot.py`.
-- Fast test run: `make test` (verbosely runs pytest via the venv).
-- Coverage run: `make coverage` or `./scripts/run_tests_with_coverage.sh` (HTML in `htmlcov/`, XML in `coverage.xml`).
-- Linting is manual; run `python -m pytest tests/ --cov=. --cov-report=term-missing` before opening a PR.
+## 1️⃣ Project Layout & Core Modules
+```
+/bot.py                     # entry‑point, starts health server + telegram polling
+/util/
+    __init__.py
+    config.py               # env loading, prompt caching, constants
+    telegram.py             # all bot handlers, keyboards, callbacks
+    sheets.py               # Google Sheets I/O helpers
+    openrouter.py           # LLM request wrapper with retry/fallback logic
+    scheduler.py            # daily summary job registration
+    health.py               # Flask health/nudge service
+    message_queue.py        # per‑chat async queue for sequential processing
+    postgres.py             # optional Postgres persistence layer
+/tests/
+    conftest.py            # shared fixtures, monkeypatches, mock servers
+    test_*.py              # pytest suites (unit + integration)
+scripts/
+    run_tests_with_coverage.sh   # wrapper for coverage HTML/XML generation
+Procfile                    # process declarations for deployment platforms
+.prompt.txt                 # LLM prompt used by the bot
+```
 
-## Coding Style & Naming Conventions
-- Follow PEP 8 with 4-space indentation and module-level `logger = logging.getLogger(__name__)`; prefer `logging` over `print`.
-- Use f-strings and small, pure helpers inside `util/` to keep Telegram and Sheets handlers readable.
-- Tests follow `test_*.py` with `Test*` classes or free functions; fixtures live in `tests/conftest.py`.
-- Keep configuration reads centralized in `util/config.py` instead of scattering `os.getenv` calls.
+---
 
-## Testing Guidelines
-- Primary framework: pytest with asyncio support and coverage defaults from `pytest.ini`.
-- Mark long-running or external calls with `@pytest.mark.integration`/`@pytest.mark.slow`; default runs should stay green without external services.
-- Target coverage ≥ the current 90%+ badge; add unit tests for new paths and regression tests for bug fixes.
-- Use factories/mocking (responses, freezegun) to isolate Telegram and Sheets interactions.
+## 2️⃣ Environment Setup & Build Commands
+| Task | Command | Description |
+|------|---------|-------------|
+| **Create venv** | `python -m venv .venv && source .venv/bin/activate` | Isolates dependencies. |
+| **Install deps** | `pip install -r requirements.txt -r requirements-test.txt` | Core + test packages. |
+| **Run bot locally** | `python bot.py` | Requires a populated `.env`. |
+| **Run all tests** | `make test` *(or `pytest -q` inside the venv)* | Fast unit‑test run, no external services. |
+| **Run single test** | `pytest tests/test_telegram.py::test_help_command -vv` | Replace path & function as needed. |
+| **Run coverage** | `make coverage` or `./scripts/run_tests_with_coverage.sh` | Generates `htmlcov/` and `coverage.xml`. |
+| **Lint / type‑check** | `ruff check . && mypy util/ tests/` | Enforces style & static typing (optional). |
+| **Start health only** | `RUN_TELEGRAM_BOT=false python bot.py` | Useful for CI health checks. |
 
-## Commit & Pull Request Guidelines
-- Commit messages are short, imperative summaries (e.g., “Add daily spend display”), similar to existing history.
-- For PRs, include: summary of behavior change, how to reproduce/test (`make test`/`make coverage` outputs), and any config or prompt updates that reviewers should mirror.
-- Link related issues/tasks; if behavior affects deployment, note Procfile or env var changes explicitly.
+*All commands assume the virtual environment is active (`source .venv/bin/activate`).*
 
-## Security & Configuration Tips
-- Store secrets in `.env` and keep `credentials.json` out of commits; use `GOOGLE_CREDENTIALS_PATH` to point at local credentials.
-- Required vars: `TELEGRAM_BOT_TOKEN`, `GOOGLE_SHEET_ID`, `OPENROUTER_API_KEY` (for LLM), plus optional `OPENROUTER_LLM_VERSION` and `SERVICE_URL`.
-- When updating `prompt.txt` or scheduler timings, document the change in the PR description so operators can sync runtime config.
+---
+
+## 3️⃣ Testing Guidelines
+- **Framework:** `pytest` with `asyncio` plugin (auto‑detects async tests).
+- **Markers:** `@pytest.mark.integration` for external calls, `@pytest.mark.slow` for long but deterministic runs.
+- **Isolation:** Use factories/mocking (`responses`, `freezegun`, `aiounittest`) to stub network and time‑dependent code.
+- **Coverage Goal:** ≥ 90 % overall, ≥ 80 % on newly touched modules.
+- **Running a single test** (see table above) is the preferred workflow during development.
+
+---
+
+## 4️⃣ Code Style & Naming Conventions
+| Aspect | Guideline |
+|--------|-----------|
+| **Indentation** | 4 spaces, no tabs. |
+| **Line length** | ≤ 100 chars; split long strings with parentheses. |
+| **Imports** | Grouped: std‑lib → third‑party → local; alphabetical within groups; explicit (`from telegram import Update`). |
+| **Naming** | Modules/files `snake_case.py`; functions `snake_case()`; classes `PascalCase`; constants `UPPER_SNAKE_CASE`. |
+| **Type hints** | All public functions (handlers, utils) must have full annotations. Use `typing` (`Optional`, `Dict`, `List`). |
+| **Docstrings** | Google style triple‑quoted strings; include param/return sections for non‑trivial signatures. |
+| **Logging** | One module‑level logger: `logger = logging.getLogger(__name__)`; prefer `logger.*` over `print`. |
+| **Error handling** | Catch specific exceptions, add context if re‑raising, and surface user‑friendly Telegram messages. |
+| **Async best practices** | All I/O functions are `async def`; never block the loop with sync code (`time.sleep`). |
+| **Keyboard helpers** | Small dedicated functions (`get_command_keyboard`, `get_full_command_keyboard`) returning a `ReplyKeyboardMarkup`. |
+| **Constants** | Centralize in `util/config.py` or module globals; avoid magic numbers. |
+
+Additional notes:
+- Use f‑strings everywhere.
+- Keep Telegram‑specific logic thin; delegate heavy work to helpers in `util/`.
+- Configuration reads should always go through `util.config`. 
+
+---
+
+## 5️⃣ Dependency Management
+When a new third‑party library is required:
+1. Install it inside the active venv (`pip install <pkg>`).
+2. Freeze with `pip freeze > requirements.txt` (or `requirements-test.txt` if test‑only).
+3. Add an entry under **New Dependencies** in this file describing purpose and version range.
+4. Run the full test suite to confirm nothing breaks.
+
+---
+
+## 6️⃣ Commit & Pull‑Request Process
+1. **Branch naming:** `feature/<short-description>` or `bugfix/<issue-id>`.
+2. **Commit title:** ≤ 50 chars, imperative mood (e.g., “Add dashboard menu button”).
+3. **PR checklist:**
+   - Run `make test && make coverage`.
+   - Lint with `ruff check .` (and optional `mypy`).
+   - Verify new code is covered by tests.
+   - Update docs (`README`, this `AGENTS.md`) if behaviour changes.
+   - Ensure no secrets are added to the diff.
+
+---
+
+## 7️⃣ Security & Secrets
+- `.env` and `credentials.json` are listed in `.gitignore`; never commit them.
+- All secret access must go through helpers in `util/config.py`.
+- Required env vars: `TELEGRAM_BOT_TOKEN`, `GOOGLE_SHEET_ID`, `OPENROUTER_API_KEY`. Optional: `OPENROUTER_LLM_VERSION`, `SERVICE_URL`.
+
+---
+
+## 8️⃣ CI Expectations (future proof)
+```yaml
+steps:
+  - name: Install dependencies
+    run: pip install -r requirements.txt -r requirements-test.txt
+  - name: Lint
+    run: ruff check .
+  - name: Test
+    run: make test
+  - name: Coverage
+    run: make coverage
+```
+Keep CI thin; rely on the repository’s `make` targets.
+
+---
+
+## 9️⃣ Cursor & Copilot Rules
+*No `.cursor/` or `.github/copilot‑instructions.md` files exist, so there are currently no special cursor or copilot directives.*
+If such files appear, copy their relevant sections here and reference them in the **Agent** documentation.
+
+---
+
+*This file is deliberately detailed to give autonomous coding agents a clear contract for building, testing, styling, and safely modifying the repository.*

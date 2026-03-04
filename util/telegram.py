@@ -108,12 +108,23 @@ def load_categories():
 CATEGORIES = load_categories()
 
 def get_command_keyboard():
-    """Create a custom keyboard with command buttons."""
+    """Create a custom keyboard with primary buttons.
+    The menu button reveals additional commands."""
+    keyboard = [
+        [KeyboardButton("📅 Recent Expenses"), KeyboardButton("↩️ Undo last")],
+        [KeyboardButton("📋 Menu")]  # Button to show hidden options
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def get_full_command_keyboard():
+    """Full set of command buttons (previous layout)."""
     keyboard = [
         [KeyboardButton("💰 Add Expense")],
         [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
         [KeyboardButton("📅 Recent Expenses"), KeyboardButton("💸 Today's Summary")],
-        [KeyboardButton("↩️ Undo last"), KeyboardButton("ℹ️ Bot Info")]
+        [KeyboardButton("↩️ Undo last"), KeyboardButton("ℹ️ Bot Info")],
+        [KeyboardButton("🖥️ Dashboard")]  # /dashboard command
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -540,6 +551,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif message == "ℹ️ Bot Info":
         info_text = _get_bot_info_text()
         await update.message.reply_text(info_text, parse_mode='HTML')
+        return
+    elif message == "📋 Menu":
+        # Show full set of hidden commands
+        await update.message.reply_text("Select a command:", reply_markup=get_full_command_keyboard())
         return
 
     # Enqueue expense for sequential processing per chat
