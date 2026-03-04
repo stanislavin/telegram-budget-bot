@@ -2,6 +2,7 @@ import logging
 import re
 import time
 import asyncio
+from asyncio import CancelledError
 import os
 import subprocess
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
@@ -58,18 +59,35 @@ logger = logging.getLogger(__name__)
 pending_expenses = {}
 recently_processed_expenses = {}
 expense_locks = {}
+auto_confirm_tasks = {}
 PROCESSED_EXPENSE_TTL_SECONDS = 30
 
 
 
 def _schedule_auto_confirm(expense_id: str, context: ContextTypes.DEFAULT_TYPE):
     """Schedule the auto-confirm timer as a background task."""
-    asyncio.create_task(auto_confirm_expense(expense_id, context))
+    try:
+        if expense_id in auto_confirm_tasks:
+            try:
+                auto_confirm_tasks[expense_id].cancel()
+            except CancelledError:
+                pass
+    except RuntimeError:
+        pass
+    
+    try:
+        task = asyncio.create_task(auto_confirm_expense(expense_id, context))
+        auto_confirm_tasks[expense_id] = task
+    except RuntimeError:
+        pass
 
 
 async def _cleanup_processed_expense(expense_id: str):
     """Drop processed state after a short retention window."""
-    await asyncio.sleep(PROCESSED_EXPENSE_TTL_SECONDS)
+    try:
+        await asyncio.sleep(PROCESSED_EXPENSE_TTL_SECONDS)
+    except CancelledError:
+        pass
     recently_processed_expenses.pop(expense_id, None)
     expense_locks.pop(expense_id, None)
 
@@ -116,10 +134,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'Example: 25.50 USD food groceries\n\n'
         'Commands:\n'
         '/summary - Get today\'s spending summary\n'
-        '/undo - Delete the last expense\n\n'
+        '/undo - Delete the last expense\n'
+        '/app - Get the Android app\n\n'
         'Or use the buttons below to interact with me!',
         reply_markup=get_command_keyboard()
     )
+
+async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the Android APK file to the user."""
+    apk_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "android", "budget-tracker.apk")
+    if os.path.isfile(apk_path):
+        await update.message.reply_document(document=open(apk_path, "rb"), filename="budget-tracker.apk")
+    else:
+        await update.message.reply_text("APK not available. Please build it first with `make build-apk`.")
+
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
@@ -331,6 +359,7 @@ async def _handle_sheet_retry(query, expense_id):
     await query.edit_message_text(final_text)
 
     pending_expenses.pop(expense_id, None)
+    auto_confirm_tasks.pop(expense_id, None)
     _remember_processed_expense(expense_id, final_text)
 
 
@@ -363,6 +392,7 @@ async def _handle_confirm(query, expense_id, expense_data):
         await query.edit_message_text(final_text, reply_markup=reply_markup)
 
     pending_expenses.pop(expense_id, None)
+    auto_confirm_tasks.pop(expense_id, None)
     _remember_processed_expense(expense_id, final_text)
 
 
@@ -371,10 +401,11 @@ async def _handle_cancel(query, expense_id):
     final_text = "Expense cancelled."
     await query.edit_message_text(final_text)
     pending_expenses.pop(expense_id, None)
+    auto_confirm_tasks.pop(expense_id, None)
     _remember_processed_expense(expense_id, final_text)
 
 
-async def _handle_change_category(query, expense_id, expense_data):
+async def _handle_change_category(query, expense_id, expense_data, context):
     """Show category selection buttons."""
     reply_markup = await show_category_buttons(expense_id, expense_data['category'])
     await query.edit_message_text(
@@ -384,9 +415,11 @@ async def _handle_change_category(query, expense_id, expense_data):
         f"Description: {expense_data['description']}",
         reply_markup=reply_markup
     )
+    _schedule_auto_confirm(expense_id, context)
 
 
-async def _handle_select_category(query, expense_id, expense_data, data):
+
+async def _handle_select_category(query, expense_id, expense_data, data, context):
     """Handle category selection."""
     new_category = data.get('category')
     expense_data['category'] = new_category
@@ -400,9 +433,10 @@ async def _handle_select_category(query, expense_id, expense_data, data):
         f"Description: {expense_data['description']}",
         reply_markup=reply_markup
     )
+    _schedule_auto_confirm(expense_id, context)
 
 
-async def _handle_back(query, expense_id, expense_data):
+async def _handle_back(query, expense_id, expense_data, context):
     """Handle back button — show the confirmation screen again."""
     reply_markup = _confirmation_keyboard(expense_id)
 
@@ -413,6 +447,7 @@ async def _handle_back(query, expense_id, expense_data):
         f"Description: {expense_data['description']}",
         reply_markup=reply_markup
     )
+    _schedule_auto_confirm(expense_id, context)
 
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -455,11 +490,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == 'cancel':
             await _handle_cancel(query, expense_id)
         elif action == 'change_category':
-            await _handle_change_category(query, expense_id, expense_data)
+            await _handle_change_category(query, expense_id, expense_data, context)
         elif action == 'select_category':
-            await _handle_select_category(query, expense_id, expense_data, data)
+            await _handle_select_category(query, expense_id, expense_data, data, context)
         elif action == 'back':
-            await _handle_back(query, expense_id, expense_data)
+            await _handle_back(query, expense_id, expense_data, context)
 
 
 
@@ -609,6 +644,7 @@ def create_application():
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("summary", summary_command))
     application.add_handler(CommandHandler("undo", undo_command))
+    application.add_handler(CommandHandler("app", app_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button_callback))
     
