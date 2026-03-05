@@ -5,6 +5,7 @@ import asyncio
 from asyncio import CancelledError
 import os
 import subprocess
+import random
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
 
@@ -219,10 +220,12 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             # Format totals
             totals_str = format_daily_totals(currency_totals)
 
+            joke = random.choice(JOKES)
             final_text = (
                 f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
                 f"{expense_data['category']} - {expense_data['description']}\n\n"
-                f"💸 Total spent today: {totals_str}"
+                f"💸 Total spent today: {totals_str}\n\n"
+                f"{joke}"
             )
             await status_message.edit_text(final_text)
         else:
@@ -360,10 +363,12 @@ async def _handle_sheet_retry(query, expense_id):
         currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
+        joke = random.choice(JOKES)
         final_text = (
             f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
             f"{expense_data['category']} - {expense_data['description']}\n\n"
-            f"💸 Total spent today: {totals_str}"
+            f"💸 Total spent today: {totals_str}\n\n"
+            f"{joke}"
         )
     else:
         final_text = f"❌ Error saving to spreadsheet: {error}"
@@ -378,6 +383,19 @@ async def _handle_sheet_retry(query, expense_id):
     auto_confirm_tasks.pop(expense_id, None)
     _remember_processed_expense(expense_id, final_text)
 
+
+JOKES = [
+    "💰 Money doesn't grow on trees, but at least you're tracking it!",
+    "📉 Every expense tells a story... yours is being saved!",
+    "💸 Spending wisely? Or just spending? Either way, tracked!",
+    "🧾 Another expense! Your future self will thank you for tracking.",
+    "🎯 Budget goals: 1% better every day. Today's step: tracked!",
+    "💼 Expense saved! Remember: even small leaks sink ships.",
+    "📊 Data point added. Your wallet is crying, but you're learning!",
+    "✨ Another expense logged! Financial freedom starts with awareness.",
+    "🎲 Luck favors the prepared. Your expenses are now prepared!",
+    "💡 Pro tip: Tracking expenses is like dieting for your wallet.",
+]
 
 async def _handle_confirm(query, expense_id, expense_data):
     """Handle expense confirmation."""
@@ -394,10 +412,12 @@ async def _handle_confirm(query, expense_id, expense_data):
         currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
+        joke = random.choice(JOKES)
         final_text = (
             f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
             f"{expense_data['category']} - {expense_data['description']}\n\n"
-            f"💸 Total spent today: {totals_str}"
+            f"💸 Total spent today: {totals_str}\n\n"
+            f"{joke}"
         )
         await query.edit_message_text(final_text)
     else:
