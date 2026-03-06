@@ -510,6 +510,21 @@ async def test_handle_message_bot_info_button(
 
 
 @pytest.mark.asyncio
+async def test_handle_message_dashboard_button(mock_update, mock_context):
+    """Test '🖥️ Dashboard' button handling - should not trigger expense analysis."""
+    mock_update.message.text = "🖥️ Dashboard"
+    mock_update.message.reply_text = AsyncMock()
+
+    await handle_message(mock_update, mock_context)
+
+    # Should call dashboard_command, not process_with_openrouter
+    mock_update.message.reply_text.assert_called_once()
+    args, kwargs = mock_update.message.reply_text.call_args
+    assert "Service URL" in args[0]
+    assert isinstance(kwargs.get("parse_mode"), str)
+
+
+@pytest.mark.asyncio
 @patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
 async def test_summary_command(mock_get_daily_summary, mock_update, mock_context):
     """Test the /summary command."""
