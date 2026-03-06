@@ -397,20 +397,11 @@
         </td>
         <td class="category-total">${item.total.toFixed(2)}</td>
       `;
-      row.addEventListener('click', (e) => {
-        if (e.target.classList.contains('category-expand')) {
-          const expandIcon = e.target;
-          const details = row.nextElementSibling;
-          expandIcon.classList.toggle('expanded');
-          details.classList.toggle('expanded');
-        } else {
-          const details = row.nextElementSibling;
-          if (details && details.classList.contains('category-details')) {
-            const expandIcon = row.querySelector('.category-expand');
-            expandIcon.classList.toggle('expanded');
-            details.classList.toggle('expanded');
-          }
-        }
+      row.addEventListener('click', () => {
+        const expandIcon = row.querySelector('.category-expand');
+        const detailsDiv = row.nextElementSibling.querySelector('.category-details');
+        expandIcon.classList.toggle('expanded');
+        detailsDiv.classList.toggle('expanded');
       });
       categoryTableBody.appendChild(row);
 
