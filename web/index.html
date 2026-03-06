@@ -377,7 +377,7 @@
           categoryTableBody.innerHTML = '<tr><td colspan="2">' + data.error + '</td></tr>';
           return;
         }
-        renderCategoryTable(data);
+        renderCategoryTable(data, month);
       })
       .catch(err => {
         categoriesLoadingEl.style.display = 'none';
@@ -386,7 +386,7 @@
       });
   }
 
-  function renderCategoryTable(data) {
+  function renderCategoryTable(data, month) {
     categoryTableBody.innerHTML = '';
     data.forEach((item, index) => {
       const row = document.createElement('tr');
