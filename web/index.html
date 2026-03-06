@@ -72,11 +72,39 @@
   .view-toggle button + button { border-left: 1px solid #ccc; }
   .view-toggle button.active { background: #4f46e5; color: #fff; }
   .view-toggle button:hover:not(.active) { background: #f5f5ff; }
+
+  /* Tab navigation */
+  .tabs { display: flex; border-bottom: 2px solid #e5e5e5; margin-bottom: 20px; }
+  .tab {
+    padding: 10px 20px; border: none; background: none; font-size: 0.9rem;
+    cursor: pointer; color: #666; transition: all 0.15s;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+  }
+  .tab:hover { color: #4f46e5; }
+  .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+
+  /* Category totals table */
+  .category-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .category-table th { text-align: left; padding: 12px; border-bottom: 2px solid #e5e5e5; color: #666; font-weight: 600; }
+  .category-table td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
+  .category-table tr:hover td { background: #f9f9f9; cursor: pointer; }
+  .category-expand { float: right; color: #4f46e5; cursor: pointer; font-size: 1.2rem; }
+  .category-expand.expanded { transform: rotate(90deg); }
+  .category-details { display: none; margin-top: 10px; background: #f9f9f9; border-radius: 6px; padding: 15px; }
+  .category-details.expanded { display: block; }
+  .category-details-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .category-details-table th { text-align: left; padding: 8px; border-bottom: 1px solid #e5e5e5; color: #666; font-weight: 600; }
+  .category-details-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+  .category-total { font-weight: 600; color: #4f46e5; }
 </style>
 </head>
 <body>
 <h1>Expense Trends</h1>
-<div class="controls">
+<div class="tabs">
+  <button class="tab active" id="tabTrends">Trends</button>
+  <button class="tab" id="tabCategories">Categories</button>
+</div>
+<div class="controls" id="trendsControls">
   <div class="control-group">
     <label>Categories</label>
     <div class="multi-select" id="categorySelect">
@@ -118,9 +146,27 @@
     <input type="month" id="monthTo">
   </div>
 </div>
-<div class="chart-container">
+<div class="controls" id="categoriesControls" style="display: none;">
+  <div class="control-group">
+    <label>Month</label>
+    <input type="month" id="monthSelect">
+  </div>
+</div>
+<div class="chart-container" id="trendsContainer">
   <div class="loading" id="loading">Loading...</div>
   <canvas id="chart"></canvas>
+</div>
+<div class="chart-container" id="categoriesContainer" style="display: none;">
+  <div class="loading" id="categoriesLoading">Loading...</div>
+  <table class="category-table" id="categoryTable">
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody id="categoryTableBody"></tbody>
+  </table>
 </div>
 <div class="expenses-panel" id="expensesPanel">
   <button class="expenses-close" id="expensesClose">&times;</button>
@@ -145,7 +191,9 @@
   const currencyEl    = document.getElementById('currency');
   const monthFromEl   = document.getElementById('monthFrom');
   const monthToEl     = document.getElementById('monthTo');
+  const monthSelectEl = document.getElementById('monthSelect');
   const loadingEl     = document.getElementById('loading');
+  const categoriesLoadingEl = document.getElementById('categoriesLoading');
   const expensesPanel = document.getElementById('expensesPanel');
   const expensesTitle = document.getElementById('expensesTitle');
   const expensesBody  = document.getElementById('expensesBody');
@@ -157,6 +205,13 @@
   const catClear      = document.getElementById('catClear');
   const viewSumBtn    = document.getElementById('viewSum');
   const viewCompareBtn = document.getElementById('viewCompare');
+  const tabTrends     = document.getElementById('tabTrends');
+  const tabCategories = document.getElementById('tabCategories');
+  const trendsControls = document.getElementById('trendsControls');
+  const categoriesControls = document.getElementById('categoriesControls');
+  const trendsContainer = document.getElementById('trendsContainer');
+  const categoriesContainer = document.getElementById('categoriesContainer');
+  const categoryTableBody = document.getElementById('categoryTableBody');
 
   let chart = null;
   let chartData = [];
@@ -167,6 +222,7 @@
   let selectedCategories = new Set(); // explicit: contains selected category names
   let viewMode = 'sum'; // 'sum' or 'compare'
   let highlightedCategory = null; // for legend click in compare mode
+  let currentMonth = null;
 
   // Default: 6 months ago to current month
   const today = new Date();
@@ -174,6 +230,7 @@
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   monthFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
   monthToEl.value   = today.toISOString().slice(0, 7);
+  monthSelectEl.value = today.toISOString().slice(0, 7);
 
   function monthToFrom(val) { return val + '-01'; }
   function monthToTo(val) {
@@ -271,6 +328,27 @@
     fetchData();
   });
 
+  // --- Tab switching ---
+  tabTrends.addEventListener('click', () => {
+    tabTrends.classList.add('active');
+    tabCategories.classList.remove('active');
+    trendsControls.style.display = 'flex';
+    categoriesControls.style.display = 'none';
+    trendsContainer.style.display = 'block';
+    categoriesContainer.style.display = 'none';
+    fetchData();
+  });
+
+  tabCategories.addEventListener('click', () => {
+    tabCategories.classList.add('active');
+    tabTrends.classList.remove('active');
+    trendsControls.style.display = 'none';
+    categoriesControls.style.display = 'flex';
+    trendsContainer.style.display = 'none';
+    categoriesContainer.style.display = 'block';
+    fetchMonthlyCategories();
+  });
+
   // Load categories
   fetch('/api/categories')
     .then(r => r.json())
@@ -282,6 +360,107 @@
       fetchData();
     })
     .catch(err => console.error('Failed to load categories:', err));
+
+  // Load monthly categories
+  function fetchMonthlyCategories() {
+    const month = monthSelectEl.value;
+    if (!month) return;
+
+    categoriesLoadingEl.style.display = 'block';
+    categoryTableBody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#999">Loading...</td></tr>';
+
+    fetch('/api/monthly-categories?month=' + month)
+      .then(r => r.json())
+      .then(data => {
+        categoriesLoadingEl.style.display = 'none';
+        if (data.error) {
+          categoryTableBody.innerHTML = '<tr><td colspan="2">' + data.error + '</td></tr>';
+          return;
+        }
+        renderCategoryTable(data);
+      })
+      .catch(err => {
+        categoriesLoadingEl.style.display = 'none';
+        categoryTableBody.innerHTML = '<tr><td colspan="2">Error loading categories</td></tr>';
+        console.error(err);
+      });
+  }
+
+  function renderCategoryTable(data) {
+    categoryTableBody.innerHTML = '';
+    data.forEach((item, index) => {
+      const row = document.createElement('tr');
+      row.innerHTML = `
+        <td>
+          <span class="category-expand" data-index="${index}">&#9654;</span>
+          ${item.category}
+        </td>
+        <td class="category-total">${item.total.toFixed(2)}</td>
+      `;
+      row.addEventListener('click', (e) => {
+        if (e.target.classList.contains('category-expand')) {
+          const expandIcon = e.target;
+          const details = row.nextElementSibling;
+          expandIcon.classList.toggle('expanded');
+          details.classList.toggle('expanded');
+        } else {
+          const details = row.nextElementSibling;
+          if (details && details.classList.contains('category-details')) {
+            const expandIcon = row.querySelector('.category-expand');
+            expandIcon.classList.toggle('expanded');
+            details.classList.toggle('expanded');
+          }
+        }
+      });
+      categoryTableBody.appendChild(row);
+
+      const detailsRow = document.createElement('tr');
+      detailsRow.innerHTML = `
+        <td colspan="2" style="padding: 0;">
+          <div class="category-details" data-category="${item.category}">
+            <table class="category-details-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Amount</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody id="details-${index}"></tbody>
+            </table>
+          </div>
+        </td>
+      `;
+      categoryTableBody.appendChild(detailsRow);
+
+      // Fetch and render category expenses
+      fetch('/api/category-expenses?month=' + month + '&category=' + encodeURIComponent(item.category))
+        .then(r => r.json())
+        .then(expenses => {
+          const detailsBody = document.getElementById('details-' + index);
+          if (expenses.error) {
+            detailsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999">No expenses</td></tr>';
+            return;
+          }
+          if (!expenses.length) {
+            detailsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999">No expenses</td></tr>';
+            return;
+          }
+          detailsBody.innerHTML = expenses.map(e =>
+            '<tr>' +
+            '<td>' + e.timestamp + '</td>' +
+            '<td>' + e.amount.toFixed(2) + ' ' + e.currency + '</td>' +
+            '<td>' + (e.description || '') + '</td>' +
+            '</tr>'
+          ).join('');
+        })
+        .catch(err => {
+          const detailsBody = document.getElementById('details-' + index);
+          detailsBody.innerHTML = '<tr><td colspan="3">Error loading expenses</td></tr>';
+          console.error(err);
+        });
+    });
+  }
 
   function getSelectedCategoriesParam() {
     if (selectedCategories.size === allCategories.length) return ''; // all selected = no filter
@@ -578,6 +757,8 @@
   [currencyEl, monthFromEl, monthToEl].forEach(el => {
     el.addEventListener('change', fetchData);
   });
+
+  monthSelectEl.addEventListener('change', fetchMonthlyCategories);
 })();
 </script>
 </body>

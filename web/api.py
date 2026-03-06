@@ -43,9 +43,7 @@ def categories():
     try:
         pool = _run(_get_web_pool())
         rows = _run(
-            pool.fetch(
-                "SELECT DISTINCT category FROM expenses ORDER BY category"
-            )
+            pool.fetch("SELECT DISTINCT category FROM expenses ORDER BY category")
         )
         return jsonify([r["category"] for r in rows])
     except Exception as e:
@@ -59,7 +57,9 @@ def trends():
         date_from = request.args.get("from")
         date_to = request.args.get("to")
         # Support both old 'category' and new 'categories' param
-        categories_raw = request.args.get("categories") or request.args.get("category") or ""
+        categories_raw = (
+            request.args.get("categories") or request.args.get("category") or ""
+        )
         cat_list = [c.strip() for c in categories_raw.split(",") if c.strip()]
         split = request.args.get("split", "false").lower() in ("true", "1")
         currency = request.args.get("currency", "RUB")
@@ -168,7 +168,9 @@ def expenses():
     try:
         date_from = request.args.get("from")
         date_to = request.args.get("to")
-        categories_raw = request.args.get("categories") or request.args.get("category") or ""
+        categories_raw = (
+            request.args.get("categories") or request.args.get("category") or ""
+        )
         cat_list = [c.strip() for c in categories_raw.split(",") if c.strip()]
 
         if not date_from or not date_to:
@@ -198,15 +200,112 @@ def expenses():
 
         data = []
         for row in rows:
-            data.append({
-                "timestamp": row["timestamp"].strftime("%Y-%m-%d %H:%M"),
-                "amount": float(row["amount"]),
-                "currency": row["currency"],
-                "category": row["category"],
-                "description": row["description"],
-            })
+            data.append(
+                {
+                    "timestamp": row["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                    "amount": float(row["amount"]),
+                    "currency": row["currency"],
+                    "category": row["category"],
+                    "description": row["description"],
+                }
+            )
 
         return jsonify(data)
     except Exception as e:
         logger.error(f"Error fetching expenses: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/monthly-categories")
+def monthly_categories():
+    """Return category totals for a specific month."""
+    try:
+        month = request.args.get("month")
+        if not month:
+            return jsonify({"error": "month parameter is required"}), 400
+
+        try:
+            dt = datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            return jsonify({"error": "month must be YYYY-MM"}), 400
+
+        dt_from = datetime(dt.year, dt.month, 1)
+        dt_to = datetime(dt.year, dt.month + 1, 1)
+
+        query = f"""
+            SELECT category,
+                   SUM(
+                       CASE
+                           WHEN e.currency = 'RUB' THEN e.amount
+                           ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                       END
+                   ) AS total
+            FROM expenses e
+            LEFT JOIN currency_rates cr_source
+                ON cr_source.currency = e.currency
+                AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
+            WHERE e.timestamp >= $1 AND e.timestamp < $2
+            GROUP BY e.category
+            ORDER BY total DESC
+        """
+        pool = _run(_get_web_pool())
+        rows = _run(pool.fetch(query, dt_from, dt_to))
+
+        data = []
+        for row in rows:
+            data.append(
+                {
+                    "category": row["category"],
+                    "total": round(float(row["total"]), 2),
+                }
+            )
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching monthly categories: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/category-expenses")
+def category_expenses():
+    """Return expenses for a specific category within a month."""
+    try:
+        month = request.args.get("month")
+        category = request.args.get("category")
+
+        if not month or not category:
+            return jsonify({"error": "month and category parameters are required"}), 400
+
+        try:
+            dt = datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            return jsonify({"error": "month must be YYYY-MM"}), 400
+
+        dt_from = datetime(dt.year, dt.month, 1)
+        dt_to = datetime(dt.year, dt.month + 1, 1)
+
+        query = f"""
+            SELECT timestamp, amount, currency, description
+            FROM expenses
+            WHERE timestamp >= $1 AND timestamp < $2
+              AND category = $3
+            ORDER BY timestamp DESC
+        """
+        pool = _run(_get_web_pool())
+        rows = _run(pool.fetch(query, dt_from, dt_to, category))
+
+        data = []
+        for row in rows:
+            data.append(
+                {
+                    "timestamp": row["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                    "amount": float(row["amount"]),
+                    "currency": row["currency"],
+                    "description": row["description"],
+                }
+            )
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching category expenses: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
