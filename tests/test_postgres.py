@@ -47,19 +47,21 @@ def test_clean_dsn_no_channel_binding():
 @pytest.mark.asyncio
 async def test_save_to_postgres_success(mock_pg_pool):
     """Test successful save to Postgres."""
+    pg._spending_type_column_ensured = False
     mock_pg_pool.execute = AsyncMock()
 
     success, error = await pg.save_to_postgres(25.50, 'USD', 'food', 'lunch')
 
     assert success is True
     assert error is None
-    mock_pg_pool.execute.assert_awaited_once()
-    call_args = mock_pg_pool.execute.call_args
-    assert 'INSERT INTO expenses' in call_args[0][0]
-    assert call_args[0][2] == 25.50  # amount
-    assert call_args[0][3] == 'USD'  # currency
-    assert call_args[0][4] == 'food'  # category
-    assert call_args[0][5] == 'lunch'  # description
+    # Called twice: once for migration, once for insert
+    assert mock_pg_pool.execute.await_count == 2
+    insert_call = mock_pg_pool.execute.call_args_list[1]
+    assert 'INSERT INTO expenses' in insert_call[0][0]
+    assert insert_call[0][2] == 25.50  # amount
+    assert insert_call[0][3] == 'USD'  # currency
+    assert insert_call[0][4] == 'food'  # category
+    assert insert_call[0][5] == 'lunch'  # description
 
 
 @pytest.mark.asyncio
@@ -78,11 +80,14 @@ async def test_save_to_postgres_failure(mock_pg_pool):
 @pytest.mark.asyncio
 async def test_delete_last_expense_pg_success(mock_pg_pool):
     """Test successful delete of last expense."""
+    pg._spending_type_column_ensured = False
+    mock_pg_pool.execute = AsyncMock()
     mock_pg_pool.fetchrow = AsyncMock(return_value={
         'amount': 25.50,
         'currency': 'USD',
         'category': 'food',
         'description': 'lunch',
+        'spending_type': 'need',
     })
 
     expense_info, error = await pg.delete_last_expense_pg()
@@ -92,6 +97,7 @@ async def test_delete_last_expense_pg_success(mock_pg_pool):
     assert expense_info['currency'] == 'USD'
     assert expense_info['category'] == 'food'
     assert expense_info['description'] == 'lunch'
+    assert expense_info['spending_type'] == 'need'
 
 
 @pytest.mark.asyncio

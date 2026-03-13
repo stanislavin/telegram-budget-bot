@@ -25,5 +25,5 @@ async def test_process_with_openrouter_no_currency_defaults_to_rub(mock_openrout
     assert error is None
     # Should default to RUB
     data, model = result
-    assert data == (100.0, 'RUB', 'Food', 'Groceries')
+    assert data == (100.0, 'RUB', 'Food', None, 'Groceries')
     mock_openrouter_response_no_currency.assert_called_once()

@@ -27,29 +27,35 @@ Your task is to:
 
 5. Extract the original description without the expense amount, currency, and category.
 
-Output the response in this exact format: 
-expense,currency,category,original description without the expense amount and currency
+6. Classify the expense into one of the following spending types:
+   - need: essential living expenses (rent, groceries, utilities, health, insurance, transport to work, essentials, bills)
+   - want: discretionary spending (eating out, entertainment, toys, presents, subscriptions, sports, whatever, deliveries)
+   - invest: investments in future value (education, courses, savings, work tools)
+
+Output the response in this exact format:
+expense,currency,category,spending_type,original description without the expense amount and currency
 
 Rules:
 - Use only commas as separators
-- Strictly follow the field order: expense, currency, category, description
+- Strictly follow the field order: expense, currency, category, spending_type, description
 - Exclude the expense amount, currency and category from the "original description" field
 - If the category is unclear, use "extra" and ensure the output still follows the format
+- spending_type must be one of: need, want, invest
 - Do not include any additional information in the output
 - Follow the format exactly as shown in the examples below
 
 Examples:
 Input: Потратил 500 RUB на такси в городе
-Output: 500,RUB,taxi,на такси в городе
+Output: 500,RUB,transport,need,на такси в городе
 
 Input: 700 на булочки в категорию essentials
-Output: 700,RUB,essentials,на булочки
+Output: 700,RUB,essentials,need,на булочки
 
 Input: 1200 EUR за аренду квартиры
-Output: 1200,EUR,bills,за аренду квартиры
+Output: 1200,EUR,bills,need,за аренду квартиры
 
 Input: 300 на подарок другу
-Output: 300,RUB,presents,на подарок другу
+Output: 300,RUB,presents,want,на подарок другу
 
 Input: 1500 на курс программирования
-Output: 1500,RUB,education,на курс программирования
+Output: 1500,RUB,education,invest,на курс программирования

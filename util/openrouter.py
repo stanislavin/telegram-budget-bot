@@ -16,23 +16,38 @@ logger = logging.getLogger(__name__)
 # Define supported currencies
 SUPPORTED_CURRENCIES = {'RSD', 'EUR', 'RUB'}
 
+VALID_SPENDING_TYPES = {'need', 'want', 'invest'}
+
 def _parse_openrouter_response(formatted_text: str):
     """Helper function to parse OpenRouter API response."""
     parts = formatted_text.split(',')
-    if len(parts) != 4:
+    if len(parts) == 5:
+        amount = float(parts[0])
+        currency = parts[1].upper()
+        category = parts[2]
+        spending_type = parts[3].strip().lower()
+        description = parts[4]
+    elif len(parts) == 4:
+        # Backwards compatibility: no spending_type field
+        amount = float(parts[0])
+        currency = parts[1].upper()
+        category = parts[2]
+        spending_type = None
+        description = parts[3]
+    else:
         raise ValueError("Failed to parse OpenRouter response")
-
-    amount = float(parts[0])
-    currency = parts[1].upper()
-    category = parts[2]
-    description = parts[3]
 
     # Ensure currency defaults to RUB if not specified or invalid
     if currency not in SUPPORTED_CURRENCIES:
         logger.warning(f"Invalid or ambiguous currency '{currency}' detected, defaulting to RUB")
         currency = 'RUB'
 
-    return amount, currency, category, description
+    # Validate spending_type
+    if spending_type not in VALID_SPENDING_TYPES:
+        logger.warning(f"Invalid spending_type '{spending_type}', defaulting to None")
+        spending_type = None
+
+    return amount, currency, category, spending_type, description
 
 
 @with_retry(max_retries=1, error_message="Error processing with OpenRouter")

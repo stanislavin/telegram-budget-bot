@@ -51,11 +51,11 @@ if DATABASE_URL:
 from util.message_queue import enqueue_expense, queue_size
 
 
-async def _dual_save(amount, currency, category, description):
+async def _dual_save(amount, currency, category, description, spending_type=None):
     """Save to Sheets (+ Postgres when configured). Returns Sheets result."""
     if DATABASE_URL:
         sheets_coro = save_to_sheets(amount, currency, category, description)
-        pg_coro = save_to_postgres(amount, currency, category, description)
+        pg_coro = save_to_postgres(amount, currency, category, description, spending_type=spending_type)
         (sheets_result, pg_result) = await asyncio.gather(
             sheets_coro, pg_coro, return_exceptions=True
         )
@@ -255,6 +255,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             expense_data["currency"],
             expense_data["category"],
             expense_data["description"],
+            spending_type=expense_data.get("spending_type"),
         )
 
         if success:
@@ -394,7 +395,7 @@ async def _handle_openrouter_retry(query, expense_id, update, context):
         return
 
     processed_data, model_used = result
-    amount, currency, category, description = processed_data
+    amount, currency, category, spending_type, description = processed_data
 
     if not expense_id:
         expense_id = (
@@ -405,6 +406,7 @@ async def _handle_openrouter_retry(query, expense_id, update, context):
         "amount": amount,
         "currency": currency,
         "category": category,
+        "spending_type": spending_type,
         "description": description,
         "status_message": query.message,
     }
@@ -443,6 +445,7 @@ async def _handle_sheet_retry(query, expense_id):
         expense_data["currency"],
         expense_data["category"],
         expense_data["description"],
+        spending_type=expense_data.get("spending_type"),
     )
 
     if success:
@@ -500,6 +503,7 @@ async def _handle_confirm(query, expense_id, expense_data):
         expense_data["currency"],
         expense_data["category"],
         expense_data["description"],
+        spending_type=expense_data.get("spending_type"),
     )
 
     if success:
@@ -729,7 +733,7 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     processed_data, model_used = result
-    amount, currency, category, description = processed_data
+    amount, currency, category, spending_type, description = processed_data
 
     # Store the expense data for confirmation
     expense_id = f"{update.message.chat_id}-{update.message.message_id}"
@@ -737,6 +741,7 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "amount": amount,
         "currency": currency,
         "category": category,
+        "spending_type": spending_type,
         "description": description,
         "status_message": status_message,
     }
@@ -756,10 +761,12 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"\n\n<pre>🤖 {model_short} · {t_ai:.2f}s AI · {t_total:.2f}s total</pre>"
     )
 
+    type_line = f"\nType: {spending_type}" if spending_type else ""
+
     await status_message.edit_text(
         f"📊 Please confirm the expense (auto-confirms in 10s):\n"
         f"Amount: {amount} {currency}\n"
-        f"Category: {category}\n"
+        f"Category: {category}{type_line}\n"
         f"Description: {description}{fallback_msg}{timing_line}",
         reply_markup=reply_markup,
         parse_mode="HTML",

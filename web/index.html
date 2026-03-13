@@ -221,6 +221,40 @@
   .edit-expenses-table select.changed { border-color: #4f46e5; background: #f5f5ff; font-weight: 600; }
   .cat-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
   .cat-save-ok.show { opacity: 1; }
+
+  /* Spending type structure cards */
+  .spending-type-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .spending-type-card {
+    flex: 1; min-width: 140px; border-radius: 8px; padding: 14px 18px;
+    border: 2px solid; text-align: center;
+  }
+  .spending-type-card.need { border-color: #059669; background: #f0fdf4; }
+  .spending-type-card.want { border-color: #d97706; background: #fffbeb; }
+  .spending-type-card.invest { border-color: #2563eb; background: #eff6ff; }
+  .spending-type-card .st-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
+  .spending-type-card.need .st-label { color: #059669; }
+  .spending-type-card.want .st-label { color: #d97706; }
+  .spending-type-card.invest .st-label { color: #2563eb; }
+  .spending-type-card .st-pct { font-size: 1.4rem; font-weight: 700; }
+  .spending-type-card.need .st-pct { color: #059669; }
+  .spending-type-card.want .st-pct { color: #d97706; }
+  .spending-type-card.invest .st-pct { color: #2563eb; }
+  .spending-type-card .st-amount { font-size: 0.8rem; color: #666; margin-top: 2px; }
+
+  /* Spending type filter toggles */
+  .spending-type-filter { display: flex; gap: 6px; margin-left: 12px; }
+  .spending-type-filter button {
+    padding: 6px 14px; border: 1px solid #ccc; border-radius: 6px;
+    font-size: 0.8rem; cursor: pointer; background: #fff; color: #666;
+    transition: all 0.15s; font-weight: 500;
+  }
+  .spending-type-filter button:hover { border-color: #999; }
+  .spending-type-filter button.active-need { background: #059669; color: #fff; border-color: #059669; }
+  .spending-type-filter button.active-want { background: #d97706; color: #fff; border-color: #d97706; }
+  .spending-type-filter button.active-invest { background: #2563eb; color: #fff; border-color: #2563eb; }
+
+  .type-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
+  .type-save-ok.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -324,6 +358,14 @@
     <label>Month</label>
     <input type="month" id="budgetMonth">
   </div>
+  <div class="control-group">
+    <label>Filter by Type</label>
+    <div class="spending-type-filter" id="spendingTypeFilter">
+      <button data-type="need">Need</button>
+      <button data-type="want">Want</button>
+      <button data-type="invest">Invest</button>
+    </div>
+  </div>
 </div>
 <div class="chart-container" id="budgetContainer" style="display: none;">
   <div class="loading" id="budgetLoading">Loading...</div>
@@ -414,6 +456,7 @@
   let viewMode = 'sum'; // 'sum' or 'compare'
   let highlightedCategory = null; // for legend click in compare mode
   let currentMonth = null;
+  let activeSpendingTypes = new Set(); // spending type filter for budget tab
 
   // Default: 6 months ago to current month
   const today = new Date();
@@ -956,6 +999,21 @@
   budgetMonthEl.addEventListener('change', fetchBudget);
   editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
 
+  // Spending type filter toggles
+  document.querySelectorAll('#spendingTypeFilter button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      if (activeSpendingTypes.has(type)) {
+        activeSpendingTypes.delete(type);
+        btn.classList.remove('active-' + type);
+      } else {
+        activeSpendingTypes.add(type);
+        btn.classList.add('active-' + type);
+      }
+      renderBudget();
+    });
+  });
+
   // --- Analytics ---
   function fetchAnalytics() {
     const from = analyticsFromEl.value;
@@ -1118,17 +1176,56 @@
 
   function renderBudget() {
     const data = budgetData;
+    const filtering = activeSpendingTypes.size > 0;
     let html = '';
 
-    // Summary cards
+    // Spending type structure cards
+    const sts = data.spending_type_summary || {};
+    html += '<div class="spending-type-cards">';
+    ['need', 'want', 'invest'].forEach(st => {
+      const info = sts[st] || { amount: 0, percentage: 0 };
+      html += '<div class="spending-type-card ' + st + '">';
+      html += '<div class="st-label">' + st.charAt(0).toUpperCase() + st.slice(1) + '</div>';
+      html += '<div class="st-pct">' + info.percentage + '%</div>';
+      html += '<div class="st-amount">' + fmt(info.amount) + ' RUB</div>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // Summary cards — recalculate if filtering
+    let displayPlanned = data.total_planned;
+    let displayActual = data.total_actual;
+    if (filtering) {
+      displayActual = 0;
+      data.categories.forEach(cat => {
+        (cat.expenses || []).forEach(e => {
+          if (e.spending_type && activeSpendingTypes.has(e.spending_type)) {
+            displayActual += e.amount;
+          }
+        });
+      });
+      displayActual = Math.round(displayActual * 100) / 100;
+    }
+    const displayDiff = Math.round((displayPlanned - displayActual) * 100) / 100;
+
     html += '<div class="budget-totals">';
-    html += '<div class="summary-card"><div class="label">Planned</div><div class="value">' + fmt(data.total_planned) + ' RUB</div></div>';
-    html += '<div class="summary-card"><div class="label">Actual</div><div class="value">' + fmt(data.total_actual) + ' RUB</div></div>';
-    html += '<div class="summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(data.total_diff) + '">' + (data.total_diff >= 0 ? '+' : '') + fmt(data.total_diff) + ' RUB</div></div>';
+    html += '<div class="summary-card"><div class="label">Planned</div><div class="value">' + fmt(displayPlanned) + ' RUB</div></div>';
+    html += '<div class="summary-card"><div class="label">Actual' + (filtering ? ' (filtered)' : '') + '</div><div class="value">' + fmt(displayActual) + ' RUB</div></div>';
+    html += '<div class="summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(displayDiff) + '">' + (displayDiff >= 0 ? '+' : '') + fmt(displayDiff) + ' RUB</div></div>';
     html += '</div>';
 
     // Category cards
     data.categories.forEach((cat, ci) => {
+      // Calculate filtered actual if spending type filter is active
+      let catActual = cat.actual;
+      let filteredExpenses = cat.expenses || [];
+      if (filtering) {
+        filteredExpenses = filteredExpenses.filter(e => e.spending_type && activeSpendingTypes.has(e.spending_type));
+        catActual = Math.round(filteredExpenses.reduce((s, e) => s + e.amount, 0) * 100) / 100;
+        if (filteredExpenses.length === 0 && cat.items.length === 0) return; // skip empty categories when filtering
+      }
+      const catDiff = Math.round((cat.planned - catActual) * 100) / 100;
+
       const isOpen = budgetOpenCats.has(cat.category);
       html += '<div class="budget-category">';
 
@@ -1137,9 +1234,9 @@
       html += '<span class="cat-name">' + cat.category + ' (' + cat.items.length + ' items)</span>';
       html += '<div class="cat-summary">';
       html += '<span style="font-weight:600;color:#4f46e5">' + fmt(cat.planned) + '</span>';
-      html += '<span>actual: ' + fmt(cat.actual) + '</span>';
-      html += '<span class="' + diffClass(cat.diff) + '">' + (cat.diff >= 0 ? '+' : '') + fmt(cat.diff) + '</span>';
-      html += progressBar(cat.planned, cat.actual);
+      html += '<span>actual: ' + fmt(catActual) + '</span>';
+      html += '<span class="' + diffClass(catDiff) + '">' + (catDiff >= 0 ? '+' : '') + fmt(catDiff) + '</span>';
+      html += progressBar(cat.planned, catActual);
       html += '</div></div>';
 
       // Body - two columns
@@ -1162,7 +1259,7 @@
       // Right column: actual expenses
       html += '<div class="budget-col">';
       html += '<div class="budget-col-title">Actual</div>';
-      const expenses = cat.expenses || [];
+      const expenses = filtering ? filteredExpenses : (cat.expenses || []);
       if (expenses.length) {
         html += '<table class="budget-actual-table"><thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody>';
         expenses.forEach(e => {
@@ -1398,8 +1495,10 @@
       return;
     }
 
+    const spendingTypes = ['need', 'want', 'invest'];
+
     let html = '<table class="edit-expenses-table"><thead><tr>';
-    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th>';
+    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th>';
     html += '</tr></thead><tbody>';
 
     data.forEach(exp => {
@@ -1408,12 +1507,21 @@
       html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
       html += '<td>' + (exp.description || '') + '</td>';
       html += '<td>';
-      html += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '">';
+      html += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '" data-field="category">';
       allCategories.forEach(cat => {
         html += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
       });
       html += '</select>';
       html += '<span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span>';
+      html += '</td>';
+      html += '<td>';
+      html += '<select data-id="' + exp.id + '" data-orig="' + (exp.spending_type || '') + '" data-field="spending_type">';
+      html += '<option value=""' + (!exp.spending_type ? ' selected' : '') + '>—</option>';
+      spendingTypes.forEach(st => {
+        html += '<option value="' + st + '"' + (st === exp.spending_type ? ' selected' : '') + '>' + st + '</option>';
+      });
+      html += '</select>';
+      html += '<span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span>';
       html += '</td>';
       html += '</tr>';
     });
@@ -1421,8 +1529,8 @@
     html += '</tbody></table>';
     editExpensesContent.innerHTML = html;
 
-    // Attach change handlers
-    editExpensesContent.querySelectorAll('select[data-id]').forEach(sel => {
+    // Attach change handlers for category
+    editExpensesContent.querySelectorAll('select[data-field="category"]').forEach(sel => {
       sel.addEventListener('change', () => {
         const id = sel.dataset.id;
         const newCat = sel.value;
@@ -1445,6 +1553,37 @@
           })
           .catch(err => {
             alert('Error saving category');
+            console.error(err);
+          });
+      });
+    });
+
+    // Attach change handlers for spending type
+    editExpensesContent.querySelectorAll('select[data-field="spending_type"]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const id = sel.dataset.id;
+        const newType = sel.value;
+        const orig = sel.dataset.orig;
+        sel.classList.toggle('changed', newType !== orig);
+
+        if (!newType) return; // don't save empty value
+
+        fetch('/api/expenses/' + id + '/spending-type', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ spending_type: newType }),
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.error) { alert('Error: ' + resp.error); return; }
+            sel.dataset.orig = newType;
+            sel.classList.remove('changed');
+            const ok = document.getElementById('type-save-ok-' + id);
+            ok.classList.add('show');
+            setTimeout(() => ok.classList.remove('show'), 1500);
+          })
+          .catch(err => {
+            alert('Error saving spending type');
             console.error(err);
           });
       });
