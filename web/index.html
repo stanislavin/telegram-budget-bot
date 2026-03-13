@@ -221,6 +221,11 @@
   .edit-expenses-table select.changed { border-color: #4f46e5; background: #f5f5ff; font-weight: 600; }
   .cat-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
   .cat-save-ok.show { opacity: 1; }
+  .expense-delete {
+    background: none; border: 1px solid #ddd; border-radius: 4px; color: #999;
+    cursor: pointer; padding: 3px 8px; font-size: 0.85rem; transition: all 0.15s;
+  }
+  .expense-delete:hover { border-color: #dc2626; color: #dc2626; background: #fef2f2; }
 
   /* Spending type structure cards */
   .spending-type-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -1498,11 +1503,11 @@
     const spendingTypes = ['need', 'want', 'invest'];
 
     let html = '<table class="edit-expenses-table"><thead><tr>';
-    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th>';
+    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th><th></th>';
     html += '</tr></thead><tbody>';
 
     data.forEach(exp => {
-      html += '<tr>';
+      html += '<tr data-row-id="' + exp.id + '">';
       html += '<td>' + exp.timestamp + '</td>';
       html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
       html += '<td>' + (exp.description || '') + '</td>';
@@ -1523,6 +1528,7 @@
       html += '</select>';
       html += '<span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span>';
       html += '</td>';
+      html += '<td><button class="expense-delete" data-id="' + exp.id + '" title="Delete">&times;</button></td>';
       html += '</tr>';
     });
 
@@ -1584,6 +1590,28 @@
           })
           .catch(err => {
             alert('Error saving spending type');
+            console.error(err);
+          });
+      });
+    });
+
+    // Attach delete handlers
+    editExpensesContent.querySelectorAll('.expense-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const row = editExpensesContent.querySelector('tr[data-row-id="' + id + '"]');
+        const desc = row ? row.children[2].textContent : '';
+        const amt = row ? row.children[1].textContent : '';
+        if (!confirm('Delete expense "' + desc + '" (' + amt + ')?')) return;
+
+        fetch('/api/expenses/' + id, { method: 'DELETE' })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.error) { alert('Error: ' + resp.error); return; }
+            if (row) row.remove();
+          })
+          .catch(err => {
+            alert('Error deleting expense');
             console.error(err);
           });
       });
