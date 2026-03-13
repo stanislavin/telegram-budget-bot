@@ -469,6 +469,155 @@ def analytics():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/api/budget", methods=["GET"])
+def get_budget():
+    """Return budget plan for a month alongside actual spending."""
+    try:
+        month = request.args.get("month")
+        if not month:
+            return jsonify({"error": "month parameter is required"}), 400
+
+        try:
+            dt = datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            return jsonify({"error": "month must be YYYY-MM"}), 400
+
+        dt_from = datetime(dt.year, dt.month, 1)
+        if dt.month == 12:
+            dt_to = datetime(dt.year + 1, 1, 1)
+        else:
+            dt_to = datetime(dt.year, dt.month + 1, 1)
+
+        pool = _run(_get_web_pool())
+
+        # Ensure table exists
+        _run(pool.execute("""
+            CREATE TABLE IF NOT EXISTS budget_plans (
+                month DATE NOT NULL,
+                category VARCHAR NOT NULL,
+                planned_amount NUMERIC NOT NULL DEFAULT 0,
+                PRIMARY KEY (month, category)
+            )
+        """))
+
+        # Get planned amounts
+        plan_rows = _run(pool.fetch(
+            "SELECT category, planned_amount FROM budget_plans WHERE month = $1",
+            dt_from.date(),
+        ))
+        plans = {r["category"]: float(r["planned_amount"]) for r in plan_rows}
+
+        # Get actual spending (converted to RUB)
+        actual_rows = _run(pool.fetch("""
+            SELECT e.category,
+                   SUM(
+                       CASE
+                           WHEN e.currency = 'RUB' THEN e.amount
+                           ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                       END
+                   ) AS total
+            FROM expenses e
+            LEFT JOIN currency_rates cr_source
+                ON cr_source.currency = e.currency
+                AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
+            WHERE e.timestamp >= $1 AND e.timestamp < $2
+            GROUP BY e.category
+            ORDER BY total DESC
+        """, dt_from, dt_to))
+        actuals = {r["category"]: round(float(r["total"]), 2) for r in actual_rows}
+
+        # Merge all categories from both plans and actuals
+        all_cats = sorted(set(list(plans.keys()) + list(actuals.keys())))
+        data = []
+        for cat in all_cats:
+            planned = plans.get(cat, 0)
+            actual = actuals.get(cat, 0)
+            data.append({
+                "category": cat,
+                "planned": round(planned, 2),
+                "actual": round(actual, 2),
+                "diff": round(planned - actual, 2),
+            })
+
+        total_planned = sum(d["planned"] for d in data)
+        total_actual = sum(d["actual"] for d in data)
+
+        return jsonify({
+            "month": month,
+            "categories": data,
+            "total_planned": round(total_planned, 2),
+            "total_actual": round(total_actual, 2),
+            "total_diff": round(total_planned - total_actual, 2),
+        })
+    except Exception as e:
+        logger.error(f"Error fetching budget: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/budget", methods=["POST"])
+def save_budget():
+    """Save budget plan entries for a month."""
+    try:
+        body = request.get_json()
+        if not body:
+            return jsonify({"error": "JSON body required"}), 400
+
+        month = body.get("month")
+        entries = body.get("entries", [])
+
+        if not month:
+            return jsonify({"error": "month is required"}), 400
+
+        try:
+            dt = datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            return jsonify({"error": "month must be YYYY-MM"}), 400
+
+        month_date = datetime(dt.year, dt.month, 1).date()
+
+        pool = _run(_get_web_pool())
+
+        # Ensure table exists
+        _run(pool.execute("""
+            CREATE TABLE IF NOT EXISTS budget_plans (
+                month DATE NOT NULL,
+                category VARCHAR NOT NULL,
+                planned_amount NUMERIC NOT NULL DEFAULT 0,
+                PRIMARY KEY (month, category)
+            )
+        """))
+
+        # Upsert each entry
+        for entry in entries:
+            category = entry.get("category", "").strip()
+            amount = entry.get("amount", 0)
+            if not category:
+                continue
+            try:
+                amount = float(amount)
+            except (ValueError, TypeError):
+                amount = 0
+
+            if amount > 0:
+                _run(pool.execute("""
+                    INSERT INTO budget_plans (month, category, planned_amount)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (month, category)
+                    DO UPDATE SET planned_amount = $3
+                """, month_date, category, amount))
+            else:
+                # Remove zero entries
+                _run(pool.execute(
+                    "DELETE FROM budget_plans WHERE month = $1 AND category = $2",
+                    month_date, category,
+                ))
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error saving budget: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/category-expenses")
 def category_expenses():
     """Return expenses for a specific category within a month."""
