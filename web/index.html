@@ -424,10 +424,7 @@
   monthSelectEl.value = today.toISOString().slice(0, 7);
   analyticsFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
   analyticsToEl.value = today.toISOString().slice(0, 7);
-  // Budget defaults to next month
-  const nextMonth = new Date(today);
-  nextMonth.setMonth(nextMonth.getMonth() + 1);
-  budgetMonthEl.value = nextMonth.toISOString().slice(0, 7);
+  budgetMonthEl.value = today.toISOString().slice(0, 7);
   editExpensesMonthEl.value = today.toISOString().slice(0, 7);
 
   function monthToFrom(val) { return val + '-01'; }
