@@ -1,9 +1,16 @@
 import pytest
 import requests
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, call
 import asyncio
-from util.openrouter import process_with_openrouter
-from util.config import OPENROUTER_LLM_VERSION, OPENROUTER_FALLBACK_MODELS
+from util.openrouter import process_with_openrouter, _call_chat_completion, _build_provider_chain
+from util.config import OPENROUTER_LLM_VERSION, OPENROUTER_FALLBACK_MODELS, OPENROUTER_URL
+
+@pytest.fixture(autouse=True)
+def disable_local_llm():
+    """Disable local LLM so tests only exercise the OpenRouter path."""
+    with patch('util.openrouter.LOCAL_LLM_URL', ''), \
+         patch('util.openrouter.LOCAL_LLM_MODEL', ''):
+        yield
 
 @pytest.fixture
 def mock_openrouter_response():
@@ -188,3 +195,179 @@ async def test_process_with_openrouter_fallback_success():
         assert data == (100.0, 'RSD', 'Food', None, 'Groceries')
         assert model == OPENROUTER_FALLBACK_MODELS[0] # First fallback
         assert mock_post.call_count == 2
+
+
+# ---------- _build_provider_chain tests ----------
+
+class TestBuildProviderChain:
+    def test_chain_includes_local_when_configured(self):
+        """Local LLM should be first in chain when URL and model are set."""
+        with patch('util.openrouter.LOCAL_LLM_URL', 'http://myhost:1234/v1/chat/completions'), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', 'my-model'):
+            chain = _build_provider_chain()
+            # First entry is local
+            url, headers, model, timeout = chain[0]
+            assert url == 'http://myhost:1234/v1/chat/completions'
+            assert model == 'my-model'
+            assert 'Authorization' not in headers
+            # Remaining entries are OpenRouter
+            assert len(chain) == 1 + 1 + len(OPENROUTER_FALLBACK_MODELS)
+            for _, hdr, _, _ in chain[1:]:
+                assert 'Authorization' in hdr
+
+    def test_chain_skips_local_when_url_empty(self):
+        """When LOCAL_LLM_URL is empty, chain should only have OpenRouter models."""
+        with patch('util.openrouter.LOCAL_LLM_URL', ''), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', 'my-model'):
+            chain = _build_provider_chain()
+            assert len(chain) == 1 + len(OPENROUTER_FALLBACK_MODELS)
+            for url, _, _, _ in chain:
+                assert url == OPENROUTER_URL
+
+    def test_chain_skips_local_when_model_empty(self):
+        """When LOCAL_LLM_MODEL is empty, chain should only have OpenRouter models."""
+        with patch('util.openrouter.LOCAL_LLM_URL', 'http://myhost:1234/v1/chat/completions'), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', ''):
+            chain = _build_provider_chain()
+            for url, _, _, _ in chain:
+                assert url == OPENROUTER_URL
+
+
+# ---------- _call_chat_completion tests ----------
+
+class TestCallChatCompletion:
+    def test_success(self):
+        """Should return content and model on 200."""
+        with patch('util.openrouter.requests.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                'choices': [{'message': {'content': '  hello  '}}]
+            }
+            mock_post.return_value = mock_resp
+
+            content, model = _call_chat_completion(
+                'http://test/v1/chat/completions',
+                {'Content-Type': 'application/json'},
+                'test-model',
+                [{'role': 'user', 'content': 'hi'}],
+            )
+            assert content == 'hello'
+            assert model == 'test-model'
+
+    def test_4xx_raises_value_error(self):
+        """Should raise ValueError on 4xx status."""
+        with patch('util.openrouter.requests.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 404
+            mock_resp.text = 'Not Found'
+            mock_post.return_value = mock_resp
+
+            with pytest.raises(ValueError, match='HTTP 404'):
+                _call_chat_completion(
+                    'http://test/v1/chat/completions', {}, 'model',
+                    [{'role': 'user', 'content': 'hi'}],
+                )
+
+    def test_5xx_raises_http_error(self):
+        """Should raise on 5xx via raise_for_status."""
+        with patch('util.openrouter.requests.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 500
+            mock_resp.raise_for_status.side_effect = requests.exceptions.HTTPError('500')
+            mock_post.return_value = mock_resp
+
+            with pytest.raises(requests.exceptions.HTTPError):
+                _call_chat_completion(
+                    'http://test/v1/chat/completions', {}, 'model',
+                    [{'role': 'user', 'content': 'hi'}],
+                )
+
+    def test_timeout_passed(self):
+        """Should pass timeout to requests.post."""
+        with patch('util.openrouter.requests.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                'choices': [{'message': {'content': 'ok'}}]
+            }
+            mock_post.return_value = mock_resp
+
+            _call_chat_completion(
+                'http://test/v1/chat/completions', {}, 'model',
+                [{'role': 'user', 'content': 'hi'}], timeout=42,
+            )
+            _, kwargs = mock_post.call_args
+            assert kwargs['timeout'] == 42
+
+
+# ---------- Local LLM preferred with fallback tests ----------
+
+class TestLocalLLMFallback:
+    @pytest.mark.asyncio
+    async def test_local_llm_success_skips_openrouter(self):
+        """When local LLM succeeds, OpenRouter should not be called."""
+        with patch('util.openrouter.LOCAL_LLM_URL', 'http://local:1234/v1/chat/completions'), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', 'local-model'), \
+             patch('util.openrouter.requests.post') as mock_post:
+            mock_resp = MagicMock()
+            mock_resp.status_code = 200
+            mock_resp.json.return_value = {
+                'choices': [{'message': {'content': '50.00,EUR,Food,need,Pizza'}}]
+            }
+            mock_post.return_value = mock_resp
+
+            result, error = await process_with_openrouter("50 eur pizza")
+            assert error is None
+            data, model = result
+            assert model == 'local-model'
+            assert data == (50.0, 'EUR', 'Food', 'need', 'Pizza')
+            # Only one call — to the local LLM
+            mock_post.assert_called_once()
+            call_url = mock_post.call_args[0][0]
+            assert call_url == 'http://local:1234/v1/chat/completions'
+
+    @pytest.mark.asyncio
+    async def test_local_llm_timeout_falls_back_to_openrouter(self):
+        """When local LLM times out, should fall back to OpenRouter."""
+        with patch('util.openrouter.LOCAL_LLM_URL', 'http://local:1234/v1/chat/completions'), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', 'local-model'), \
+             patch('util.openrouter.requests.post') as mock_post:
+            # First call (local) times out, second call (OpenRouter) succeeds
+            mock_success = MagicMock()
+            mock_success.status_code = 200
+            mock_success.json.return_value = {
+                'choices': [{'message': {'content': '50.00,EUR,Food,need,Pizza'}}]
+            }
+            mock_post.side_effect = [
+                requests.exceptions.ConnectionError("Connection refused"),
+                mock_success,
+            ]
+
+            result, error = await process_with_openrouter("50 eur pizza")
+            assert error is None
+            data, model = result
+            assert model == OPENROUTER_LLM_VERSION
+            assert mock_post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_local_llm_error_falls_back_to_openrouter(self):
+        """When local LLM returns 500, should fall back to OpenRouter."""
+        with patch('util.openrouter.LOCAL_LLM_URL', 'http://local:1234/v1/chat/completions'), \
+             patch('util.openrouter.LOCAL_LLM_MODEL', 'local-model'), \
+             patch('util.openrouter.requests.post') as mock_post:
+            mock_local_err = MagicMock()
+            mock_local_err.status_code = 500
+            mock_local_err.raise_for_status.side_effect = requests.exceptions.HTTPError("500")
+
+            mock_openrouter_ok = MagicMock()
+            mock_openrouter_ok.status_code = 200
+            mock_openrouter_ok.json.return_value = {
+                'choices': [{'message': {'content': '50.00,EUR,Food,need,Pizza'}}]
+            }
+            mock_post.side_effect = [mock_local_err, mock_openrouter_ok]
+
+            result, error = await process_with_openrouter("50 eur pizza")
+            assert error is None
+            data, model = result
+            assert model == OPENROUTER_LLM_VERSION

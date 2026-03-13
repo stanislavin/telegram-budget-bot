@@ -6,7 +6,8 @@ from threading import Thread
 import asyncpg
 from flask import Blueprint, jsonify, request
 
-from util.config import DATABASE_URL, OPENROUTER_API_KEY, OPENROUTER_LLM_VERSION, OPENROUTER_URL
+from util.config import DATABASE_URL
+from util.openrouter import _call_chat_completion, _build_provider_chain
 from util.postgres import _clean_dsn
 
 logger = logging.getLogger(__name__)
@@ -845,8 +846,6 @@ def category_expenses():
 def analyze_expenses():
     """Send expenses + user prompt to OpenRouter for analysis."""
     try:
-        import requests as req
-
         body = request.get_json()
         if not body:
             return jsonify({"error": "JSON body required"}), 400
@@ -886,27 +885,24 @@ def analyze_expenses():
             f"My question: {prompt}"
         )
 
-        headers = {
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",
-        }
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": user_msg},
+        ]
 
-        data = {
-            "model": OPENROUTER_LLM_VERSION,
-            "messages": [
-                {"role": "system", "content": system_msg},
-                {"role": "user", "content": user_msg},
-            ],
-        }
+        last_error = None
+        for url, headers, model, timeout in _build_provider_chain():
+            try:
+                result, used_model = _call_chat_completion(
+                    url, headers, model, messages, timeout=max(timeout, 60)
+                )
+                return jsonify({"response": result, "model": used_model})
+            except Exception as e:
+                logger.warning(f"Analyze: model {model} failed: {e}")
+                last_error = e
+                continue
 
-        response = req.post(OPENROUTER_URL, headers=headers, json=data, timeout=60)
-        response.raise_for_status()
-
-        result = response.json()["choices"][0]["message"]["content"].strip()
-        model = result and OPENROUTER_LLM_VERSION
-
-        return jsonify({"response": result, "model": model})
+        raise last_error or RuntimeError("All models failed")
     except Exception as e:
         logger.error(f"Error analyzing expenses: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
