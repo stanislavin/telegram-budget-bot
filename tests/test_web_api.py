@@ -13,30 +13,37 @@ from util.health import build_app
 def client():
     """Create a Flask test client with mocked DB pool.
 
-    _run() is called twice per request: once for get_pool() → returns pool,
-    once for pool.fetch() → returns whatever mock_pool.fetch() is set to.
+    _run() intercepts all coroutine calls. It returns mock_pool for
+    _get_web_pool and _ensure_spending_type_column (no-ops), and
+    delegates to mock_pool.fetch/execute for actual queries.
     """
     mock_pool = MagicMock()
     mock_pool.fetch = MagicMock(return_value=[])
+    mock_pool.execute = MagicMock(return_value="UPDATE 1")
 
-    call_count = 0
+    # Track whether we've returned the pool yet for this request
+    got_pool = False
 
     def fake_run(coro):
-        nonlocal call_count
-        # Close the real coroutine to avoid warnings
+        nonlocal got_pool
         import asyncio
+
+        # Inspect the coroutine name to decide what to return
+        coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
 
         if asyncio.iscoroutine(coro):
             coro.close()
 
-        call_count += 1
-        if call_count % 2 == 1:
-            # Odd calls: get_pool()
+        # Pool acquisition and migration calls just return the pool
+        if '_get_web_pool' in coro_name or '_ensure' in coro_name:
             return mock_pool
-        # Even calls: pool.fetch(...)
+        # Everything else is a query — delegate to mock_pool.fetch()
         return mock_pool.fetch()
 
     with patch("web.api._run", side_effect=fake_run):
+        # Pre-set the flag to skip actual ALTER TABLE
+        import web.api
+        web.api._spending_type_col_ensured = True
         app = build_app()
         app.config["TESTING"] = True
         yield app.test_client(), mock_pool
@@ -267,6 +274,7 @@ class TestExpenses:
                     "currency": "RUB",
                     "category": "food",
                     "description": "lunch",
+                    "spending_type": "need",
                 },
                 {
                     "timestamp": datetime(2025, 1, 20, 9, 0),
@@ -274,6 +282,7 @@ class TestExpenses:
                     "currency": "RUB",
                     "category": "taxi",
                     "description": "ride home",
+                    "spending_type": "want",
                 },
             ]
         )
@@ -286,6 +295,7 @@ class TestExpenses:
         assert data[0]["currency"] == "RUB"
         assert data[0]["category"] == "food"
         assert data[0]["description"] == "lunch"
+        assert data[0]["spending_type"] == "need"
 
     def test_with_category_filter(self, client):
         test_client, mock_pool = client

@@ -10,6 +10,17 @@ from util.retry_handler import with_retry
 logger = logging.getLogger(__name__)
 
 _pool = None
+_spending_type_column_ensured = False
+
+
+async def _ensure_spending_type_column(pool):
+    """Lazily add spending_type column to expenses table if it doesn't exist."""
+    global _spending_type_column_ensured
+    if not _spending_type_column_ensured:
+        await pool.execute(
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spending_type VARCHAR DEFAULT NULL"
+        )
+        _spending_type_column_ensured = True
 
 
 def _clean_dsn(dsn: str) -> str:
@@ -27,14 +38,15 @@ async def get_pool() -> asyncpg.Pool:
 
 
 @with_retry(max_retries=1, error_message="Error saving to PostgreSQL")
-async def save_to_postgres(amount: float, currency: str, category: str, description: str):
+async def save_to_postgres(amount: float, currency: str, category: str, description: str, spending_type: str = None):
     """Insert a new expense row into PostgreSQL."""
     pool = await get_pool()
+    await _ensure_spending_type_column(pool)
     timestamp = datetime.now()
     await pool.execute(
-        """INSERT INTO expenses (timestamp, amount, currency, category, description, source_file)
-           VALUES ($1, $2, $3, $4, $5, 'bot')""",
-        timestamp, float(amount), currency, category, description,
+        """INSERT INTO expenses (timestamp, amount, currency, category, description, source_file, spending_type)
+           VALUES ($1, $2, $3, $4, $5, 'bot', $6)""",
+        timestamp, float(amount), currency, category, description, spending_type,
     )
     return True
 
@@ -48,10 +60,11 @@ async def delete_last_expense_pg():
     """
     try:
         pool = await get_pool()
+        await _ensure_spending_type_column(pool)
         row = await pool.fetchrow(
             """DELETE FROM expenses
                WHERE id = (SELECT MAX(id) FROM expenses)
-               RETURNING amount, currency, category, description"""
+               RETURNING amount, currency, category, description, spending_type"""
         )
         if row is None:
             return None, "No expenses to delete."
@@ -61,6 +74,7 @@ async def delete_last_expense_pg():
             'currency': row['currency'],
             'category': row['category'],
             'description': row['description'],
+            'spending_type': row['spending_type'],
         }
         return expense_info, None
     except Exception as e:

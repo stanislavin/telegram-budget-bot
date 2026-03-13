@@ -122,7 +122,7 @@ async def test_dual_save_both_succeed(mock_sheets, mock_pg):
 
     assert result == (True, None)
     mock_sheets.assert_awaited_once_with(10, 'USD', 'food', 'lunch')
-    mock_pg.assert_awaited_once_with(10, 'USD', 'food', 'lunch')
+    mock_pg.assert_awaited_once_with(10, 'USD', 'food', 'lunch', spending_type=None)
 
 
 @pytest.mark.asyncio

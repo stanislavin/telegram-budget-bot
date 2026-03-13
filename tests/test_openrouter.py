@@ -83,7 +83,7 @@ async def test_process_with_openrouter_success(mock_openrouter_response):
     
     assert error is None
     data, model = result
-    assert data == (100.0, 'RSD', 'Food', 'Groceries')
+    assert data == (100.0, 'RSD', 'Food', None, 'Groceries')
     assert model == OPENROUTER_LLM_VERSION
     mock_openrouter_response.assert_called_once()
 
@@ -95,7 +95,7 @@ async def test_process_with_openrouter_rub_currency(mock_openrouter_response_rub
     
     assert error is None
     data, model = result
-    assert data == (100.0, 'RUB', 'Food', 'Groceries')
+    assert data == (100.0, 'RUB', 'Food', None, 'Groceries')
     mock_openrouter_response_rub.assert_called_once()
 
 @pytest.mark.asyncio
@@ -106,7 +106,7 @@ async def test_process_with_openrouter_eur_currency(mock_openrouter_response_eur
     
     assert error is None
     data, model = result
-    assert data == (100.0, 'EUR', 'Food', 'Groceries')
+    assert data == (100.0, 'EUR', 'Food', None, 'Groceries')
     mock_openrouter_response_eur.assert_called_once()
 
 @pytest.mark.asyncio
@@ -117,7 +117,7 @@ async def test_process_with_openrouter_rsd_currency(mock_openrouter_response_rsd
     
     assert error is None
     data, model = result
-    assert data == (100.0, 'RSD', 'Food', 'Groceries')
+    assert data == (100.0, 'RSD', 'Food', None, 'Groceries')
     mock_openrouter_response_rsd.assert_called_once()
 
 @pytest.mark.asyncio
@@ -128,7 +128,7 @@ async def test_process_with_openrouter_invalid_currency_defaults_to_rub(mock_ope
     
     assert error is None
     data, model = result
-    assert data == (100.0, 'RUB', 'Food', 'Groceries')
+    assert data == (100.0, 'RUB', 'Food', None, 'Groceries')
     mock_openrouter_response_invalid_currency.assert_called_once()
 
 @pytest.mark.asyncio
@@ -185,6 +185,6 @@ async def test_process_with_openrouter_fallback_success():
         
         assert error is None
         data, model = result
-        assert data == (100.0, 'RSD', 'Food', 'Groceries')
+        assert data == (100.0, 'RSD', 'Food', None, 'Groceries')
         assert model == OPENROUTER_FALLBACK_MODELS[0] # First fallback
         assert mock_post.call_count == 2

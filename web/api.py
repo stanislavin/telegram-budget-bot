@@ -22,6 +22,16 @@ _thread = Thread(target=_loop.run_forever, daemon=True)
 _thread.start()
 
 _web_pool = None
+_spending_type_col_ensured = False
+
+
+async def _ensure_spending_type_column(pool):
+    global _spending_type_col_ensured
+    if not _spending_type_col_ensured:
+        await pool.execute(
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spending_type VARCHAR DEFAULT NULL"
+        )
+        _spending_type_col_ensured = True
 
 
 async def _get_web_pool():
@@ -189,13 +199,14 @@ def expenses():
             cat_clause = ""
 
         query = f"""
-            SELECT timestamp, amount, currency, category, description
+            SELECT timestamp, amount, currency, category, description, spending_type
             FROM expenses
             WHERE timestamp >= $1 AND timestamp < $2
               {cat_clause}
             ORDER BY timestamp DESC
         """
         pool = _run(_get_web_pool())
+        _run(_ensure_spending_type_column(pool))
         rows = _run(pool.fetch(query, dt_from, dt_to, *cat_list))
 
         data = []
@@ -207,6 +218,7 @@ def expenses():
                     "currency": row["currency"],
                     "category": row["category"],
                     "description": row["description"],
+                    "spending_type": row["spending_type"],
                 }
             )
 
@@ -528,8 +540,9 @@ def get_budget():
             })
 
         # Get actual expenses with details (converted to RUB)
+        _run(_ensure_spending_type_column(pool))
         expense_rows = _run(pool.fetch("""
-            SELECT e.category, e.timestamp, e.description,
+            SELECT e.category, e.timestamp, e.description, e.spending_type,
                    e.amount AS orig_amount, e.currency AS orig_currency,
                    CASE
                        WHEN e.currency = 'RUB' THEN e.amount
@@ -555,16 +568,21 @@ def get_budget():
         # Group expenses by category
         actuals = {}
         expenses_by_cat = {}
+        spending_type_totals = {}
         for r in expense_rows:
             cat = r["category"]
             amt = round(float(r["converted_amount"]), 2)
             actuals[cat] = actuals.get(cat, 0) + amt
+            st = r["spending_type"]
+            if st:
+                spending_type_totals[st] = spending_type_totals.get(st, 0) + amt
             expenses_by_cat.setdefault(cat, []).append({
                 "timestamp": r["timestamp"].strftime("%Y-%m-%d %H:%M"),
                 "description": r["description"] or "",
                 "amount": amt,
                 "orig_amount": float(r["orig_amount"]),
                 "orig_currency": r["orig_currency"],
+                "spending_type": st,
             })
         # Round totals
         actuals = {k: round(v, 2) for k, v in actuals.items()}
@@ -588,12 +606,21 @@ def get_budget():
         total_planned = sum(d["planned"] for d in data)
         total_actual = sum(d["actual"] for d in data)
 
+        # Spending type summary
+        st_total = sum(spending_type_totals.values()) if spending_type_totals else 0
+        spending_type_summary = {}
+        for st in ("need", "want", "invest"):
+            amount = round(spending_type_totals.get(st, 0), 2)
+            pct = round(amount / st_total * 100, 1) if st_total > 0 else 0
+            spending_type_summary[st] = {"amount": amount, "percentage": pct}
+
         return jsonify({
             "month": month,
             "categories": data,
             "total_planned": round(total_planned, 2),
             "total_actual": round(total_actual, 2),
             "total_diff": round(total_planned - total_actual, 2),
+            "spending_type_summary": spending_type_summary,
         })
     except Exception as e:
         logger.error(f"Error fetching budget: {e}", exc_info=True)
@@ -670,8 +697,9 @@ def monthly_expenses():
             dt_to = datetime(dt.year, dt.month + 1, 1)
 
         pool = _run(_get_web_pool())
+        _run(_ensure_spending_type_column(pool))
         rows = _run(pool.fetch("""
-            SELECT id, timestamp, amount, currency, category, description
+            SELECT id, timestamp, amount, currency, category, description, spending_type
             FROM expenses
             WHERE timestamp >= $1 AND timestamp < $2
             ORDER BY timestamp DESC
@@ -686,6 +714,7 @@ def monthly_expenses():
                 "currency": row["currency"],
                 "category": row["category"],
                 "description": row["description"] or "",
+                "spending_type": row["spending_type"],
             })
 
         return jsonify(data)
@@ -718,6 +747,34 @@ def update_expense_category(expense_id):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error updating expense category: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/expenses/<int:expense_id>/spending-type", methods=["PATCH"])
+def update_expense_spending_type(expense_id):
+    """Update the spending type of a specific expense."""
+    try:
+        body = request.get_json()
+        if not body or "spending_type" not in body:
+            return jsonify({"error": "spending_type is required"}), 400
+
+        spending_type = body["spending_type"].strip().lower()
+        if spending_type not in ("need", "want", "invest"):
+            return jsonify({"error": "spending_type must be one of: need, want, invest"}), 400
+
+        pool = _run(_get_web_pool())
+        _run(_ensure_spending_type_column(pool))
+        result = _run(pool.execute(
+            "UPDATE expenses SET spending_type = $1 WHERE id = $2",
+            spending_type, expense_id,
+        ))
+
+        if result == "UPDATE 0":
+            return jsonify({"error": "expense not found"}), 404
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error updating expense spending type: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

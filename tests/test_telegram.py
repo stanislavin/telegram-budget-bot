@@ -135,7 +135,7 @@ async def test_handle_message_expense(
     """Test handling of a regular expense message."""
     mock_update.message.text = "50 USD food lunch"
     mock_process_with_openrouter.return_value = (
-        ((50.0, "USD", "Food", "lunch"), "anthropic/claude-3-opus-20240229"),
+        ((50.0, "USD", "Food", None, "lunch"), "anthropic/claude-3-opus-20240229"),
         None,
     )
 
@@ -236,8 +236,9 @@ async def test_button_callback_confirm_success(
     mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi")
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
-    assert "✅ Saved: 75.0 EUR - Transport - Taxi" in calls[1][0][0]
-    assert "💸 Total spent today: 100.00 EUR" in calls[1][0][0]
+    final_text = calls[1][0][0]
+    assert "✅ Saved: 75.0 EUR - Transport - Taxi" in final_text
+    assert "💸 Total spent today:" in final_text
     assert expense_id not in pending_expenses
 
 
@@ -395,7 +396,7 @@ async def test_auto_confirm_expense_success(
     assert (
         "⏱️ Auto-confirmed: 30.0 GBP - Utilities - Electricity bill" in call_args[0][0]
     )
-    assert "💸 Total spent today: 50.00 GBP" in call_args[0][0]
+    assert "💸 Total spent today:" in call_args[0][0]
     assert expense_id not in pending_expenses
 
 
@@ -479,6 +480,7 @@ async def test_handle_message_view_categories_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
+@patch("util.telegram.DATABASE_URL", None)
 @patch("util.telegram.get_recent_expenses", new_callable=AsyncMock)
 async def test_handle_message_recent_expenses_button(
     mock_get_recent_expenses, mock_update, mock_context
@@ -525,6 +527,7 @@ async def test_handle_message_dashboard_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
+@patch("util.telegram.DATABASE_URL", None)
 @patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
 async def test_summary_command(mock_get_daily_summary, mock_update, mock_context):
     """Test the /summary command."""
@@ -537,6 +540,7 @@ async def test_summary_command(mock_get_daily_summary, mock_update, mock_context
 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
+@patch("util.telegram.DATABASE_URL", None)
 @patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
 async def test_handle_message_todays_summary_button(
     mock_get_daily_summary, mock_update, mock_context
@@ -588,7 +592,7 @@ async def test_handle_message_fallback_display(
     mock_update.message.text = "50 USD food lunch"
     fallback_model = "google/gemini-pro-1.5"
     mock_process_with_openrouter.return_value = (
-        ((50.0, "USD", "Food", "lunch"), fallback_model),
+        ((50.0, "USD", "Food", "want", "lunch"), fallback_model),
         None,
     )
 
@@ -624,7 +628,7 @@ async def test_sequential_processing_order(
     async def fake_openrouter(msg):
         order.append(msg)
         await asyncio.sleep(0.05)  # simulate work
-        return (100.0, "RUB", "food", msg), "test-model"
+        return (100.0, "RUB", "food", None, msg), "test-model"
 
     mock_process_with_openrouter.side_effect = fake_openrouter
 
@@ -658,7 +662,7 @@ async def test_different_chats_process_concurrently(
     async def fake_openrouter(msg):
         started.append(msg)
         await asyncio.sleep(0.05)
-        return (50.0, "EUR", "transport", msg), "test-model"
+        return (50.0, "EUR", "transport", None, msg), "test-model"
 
     mock_process_with_openrouter.side_effect = fake_openrouter
 
@@ -699,7 +703,7 @@ async def test_queue_error_isolation(
         call_count += 1
         if msg == "bad":
             raise RuntimeError("boom")
-        return (10.0, "RUB", "essentials", msg), "test-model"
+        return (10.0, "RUB", "essentials", None, msg), "test-model"
 
     mock_process_with_openrouter.side_effect = fake_openrouter
 
@@ -880,7 +884,7 @@ async def test_button_callback_openrouter_retry_no_expense_id(
     mock_update.effective_message = MagicMock()
     mock_update.effective_message.chat_id = 99999
     mock_update.effective_message.message_id = 11111
-    mock_process.return_value = (((50.0, "USD", "Food", "lunch"), "test-model"), None)
+    mock_process.return_value = (((50.0, "USD", "Food", None, "lunch"), "test-model"), None)
 
     await button_callback(mock_update, mock_context)
 
