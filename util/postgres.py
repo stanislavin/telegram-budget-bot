@@ -145,20 +145,31 @@ async def get_daily_summary_pg(target_date=None):
         return f"Error fetching daily summary: {e}", None
 
 
-async def get_recent_expenses_pg(days: int = 2):
+async def get_recent_expenses_pg(days: int = 2, category: str = None, spending_type: str = None):
     """Fetch expenses from the last N days — mirrors sheets.get_recent_expenses output."""
     try:
         today = datetime.now().date()
         start_date = today - timedelta(days=days - 1)
 
         pool = await get_pool()
-        rows = await pool.fetch(
-            """SELECT timestamp, amount, currency, category, description
+        await _ensure_spending_type_column(pool)
+
+        query = """SELECT timestamp, amount, currency, category, description
                FROM expenses
-               WHERE DATE(timestamp) >= $1
-               ORDER BY timestamp DESC""",
-            start_date,
-        )
+               WHERE DATE(timestamp) >= $1"""
+        params = [start_date]
+        idx = 2
+        if category:
+            query += f" AND category = ${idx}"
+            params.append(category)
+            idx += 1
+        if spending_type:
+            query += f" AND spending_type = ${idx}"
+            params.append(spending_type)
+            idx += 1
+        query += " ORDER BY timestamp DESC"
+
+        rows = await pool.fetch(query, *params)
 
         if not rows:
             return f"No expenses found in the last {days} days."
