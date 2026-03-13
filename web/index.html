@@ -1401,13 +1401,14 @@
     }
 
     let html = '<table class="edit-expenses-table"><thead><tr>';
-    html += '<th>Date</th><th>Amount</th><th>Category</th><th>Description</th>';
+    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th>';
     html += '</tr></thead><tbody>';
 
     data.forEach(exp => {
       html += '<tr>';
       html += '<td>' + exp.timestamp + '</td>';
       html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
+      html += '<td>' + (exp.description || '') + '</td>';
       html += '<td>';
       html += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '">';
       allCategories.forEach(cat => {
@@ -1416,7 +1417,6 @@
       html += '</select>';
       html += '<span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span>';
       html += '</td>';
-      html += '<td>' + (exp.description || '') + '</td>';
       html += '</tr>';
     });
 
