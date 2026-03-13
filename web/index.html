@@ -133,20 +133,10 @@
   .bar-fill { height: 100%; background: #4f46e5; border-radius: 3px; }
 
   /* Budget tab */
-  .budget-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  .budget-table th { text-align: left; padding: 12px; border-bottom: 2px solid #e5e5e5; color: #666; font-weight: 600; }
-  .budget-table td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; }
-  .budget-table tr:hover td { background: #f9f9f9; }
-  .budget-table tr.total-row td { border-top: 2px solid #e5e5e5; font-weight: 700; background: #f8f7ff; }
-  .budget-table input[type="number"] {
-    width: 110px; padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px;
-    font-size: 0.9rem; text-align: right; background: #fff;
-  }
-  .budget-table input[type="number"]:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
   .budget-diff-positive { color: #059669; font-weight: 600; }
   .budget-diff-negative { color: #dc2626; font-weight: 600; }
   .budget-diff-zero { color: #666; }
-  .budget-bar { height: 6px; border-radius: 3px; margin-top: 4px; }
+  .budget-bar-bg { height: 6px; background: #e5e5e5; border-radius: 3px; width: 100px; display: inline-block; }
   .budget-bar-ok { background: #059669; }
   .budget-bar-warn { background: #d97706; }
   .budget-bar-over { background: #dc2626; }
@@ -162,10 +152,50 @@
   .btn-copy:hover { background: #d4d4d4; }
   .budget-status { font-size: 0.85rem; color: #059669; opacity: 0; transition: opacity 0.3s; }
   .budget-status.show { opacity: 1; }
-  .budget-add-row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
-  .budget-add-row select, .budget-add-row input { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; }
-  .budget-add-row button { padding: 6px 14px; border: 1px solid #4f46e5; border-radius: 4px; background: #fff; color: #4f46e5; font-size: 0.85rem; cursor: pointer; }
-  .budget-add-row button:hover { background: #f5f5ff; }
+  .budget-category { border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  .budget-cat-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; cursor: pointer; background: #fafafa; transition: background 0.15s;
+  }
+  .budget-cat-header:hover { background: #f0f0ff; }
+  .budget-cat-header .cat-name { font-weight: 600; font-size: 0.95rem; }
+  .budget-cat-header .cat-summary { display: flex; gap: 16px; font-size: 0.85rem; align-items: center; }
+  .budget-cat-body { display: none; padding: 0 16px 12px; border-top: 1px solid #e5e5e5; }
+  .budget-cat-body.open { display: block; }
+  .budget-item-row {
+    display: flex; gap: 8px; align-items: center; padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0; font-size: 0.85rem;
+  }
+  .budget-item-row:last-of-type { border-bottom: none; }
+  .budget-item-row input[type="text"] {
+    flex: 1; padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem;
+  }
+  .budget-item-row input[type="number"] {
+    width: 100px; padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px;
+    font-size: 0.85rem; text-align: right;
+  }
+  .budget-item-row input:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
+  .budget-item-remove {
+    background: none; border: none; color: #dc2626; cursor: pointer;
+    font-size: 1.1rem; padding: 2px 6px; border-radius: 4px; line-height: 1;
+  }
+  .budget-item-remove:hover { background: #fef2f2; }
+  .budget-add-item {
+    padding: 6px 0; font-size: 0.85rem;
+  }
+  .budget-add-item button {
+    background: none; border: 1px dashed #ccc; border-radius: 4px;
+    padding: 4px 12px; color: #666; cursor: pointer; font-size: 0.8rem;
+  }
+  .budget-add-item button:hover { border-color: #4f46e5; color: #4f46e5; }
+  .budget-add-cat { display: flex; gap: 8px; margin-bottom: 12px; align-items: center; }
+  .budget-add-cat select { padding: 6px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; }
+  .budget-add-cat button { padding: 6px 14px; border: 1px solid #4f46e5; border-radius: 4px; background: #fff; color: #4f46e5; font-size: 0.85rem; cursor: pointer; }
+  .budget-add-cat button:hover { background: #f5f5ff; }
+  .budget-totals {
+    display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+  }
+  .budget-totals .summary-card { flex: 1; min-width: 140px; }
 </style>
 </head>
 <body>
@@ -993,7 +1023,7 @@
   }
   // --- Budget ---
   let budgetData = null;
-  let budgetDirty = false;
+  let budgetOpenCats = new Set(); // track which categories are expanded
 
   function fetchBudget() {
     const month = budgetMonthEl.value;
@@ -1001,7 +1031,6 @@
 
     budgetLoading.style.display = 'block';
     budgetContent.innerHTML = '';
-    budgetDirty = false;
 
     fetch('/api/budget?month=' + month)
       .then(r => r.json())
@@ -1009,7 +1038,7 @@
         budgetLoading.style.display = 'none';
         if (data.error) { budgetContent.innerHTML = '<p style="color:#c00">' + data.error + '</p>'; return; }
         budgetData = data;
-        renderBudget(data);
+        renderBudget();
       })
       .catch(err => {
         budgetLoading.style.display = 'none';
@@ -1030,43 +1059,66 @@
     let cls = 'budget-bar-ok';
     if (pct > 90) cls = 'budget-bar-over';
     else if (pct > 70) cls = 'budget-bar-warn';
-    return '<div class="budget-bar" style="width:120px;background:#e5e5e5;display:inline-block"><div style="width:' + pct + '%;height:6px;border-radius:3px" class="' + cls + '"></div></div>';
+    return '<div class="budget-bar-bg"><div style="width:' + pct + '%;height:6px;border-radius:3px" class="' + cls + '"></div></div>';
   }
 
-  function renderBudget(data) {
+  function recalcBudgetData() {
+    budgetData.categories.forEach(cat => {
+      cat.planned = cat.items.reduce((s, it) => s + it.amount, 0);
+      cat.diff = cat.planned - cat.actual;
+    });
+    budgetData.total_planned = budgetData.categories.reduce((s, c) => s + c.planned, 0);
+    budgetData.total_actual = budgetData.categories.reduce((s, c) => s + c.actual, 0);
+    budgetData.total_diff = budgetData.total_planned - budgetData.total_actual;
+  }
+
+  function renderBudget() {
+    const data = budgetData;
     let html = '';
 
-    html += '<table class="budget-table"><thead><tr>';
-    html += '<th>Category</th><th style="text-align:right">Planned (RUB)</th>';
-    html += '<th style="text-align:right">Actual</th><th style="text-align:right">Remaining</th><th>Progress</th>';
-    html += '</tr></thead><tbody>';
+    // Summary cards
+    html += '<div class="budget-totals">';
+    html += '<div class="summary-card"><div class="label">Planned</div><div class="value">' + fmt(data.total_planned) + ' RUB</div></div>';
+    html += '<div class="summary-card"><div class="label">Actual</div><div class="value">' + fmt(data.total_actual) + ' RUB</div></div>';
+    html += '<div class="summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(data.total_diff) + '">' + (data.total_diff >= 0 ? '+' : '') + fmt(data.total_diff) + ' RUB</div></div>';
+    html += '</div>';
 
-    data.categories.forEach(cat => {
-      html += '<tr>';
-      html += '<td>' + cat.category + '</td>';
-      html += '<td style="text-align:right"><input type="number" class="budget-input" data-category="' + cat.category + '" value="' + (cat.planned || '') + '" min="0" step="100" placeholder="0"></td>';
-      html += '<td style="text-align:right">' + fmt(cat.actual) + '</td>';
-      html += '<td style="text-align:right" class="' + diffClass(cat.diff) + '">' + (cat.diff >= 0 ? '+' : '') + fmt(cat.diff) + '</td>';
-      html += '<td>' + progressBar(cat.planned, cat.actual) + '</td>';
-      html += '</tr>';
+    // Category cards
+    data.categories.forEach((cat, ci) => {
+      const isOpen = budgetOpenCats.has(cat.category);
+      html += '<div class="budget-category">';
+
+      // Header
+      html += '<div class="budget-cat-header" data-cat="' + cat.category + '">';
+      html += '<span class="cat-name">' + cat.category + ' (' + cat.items.length + ' items)</span>';
+      html += '<div class="cat-summary">';
+      html += '<span style="font-weight:600;color:#4f46e5">' + fmt(cat.planned) + '</span>';
+      html += '<span>actual: ' + fmt(cat.actual) + '</span>';
+      html += '<span class="' + diffClass(cat.diff) + '">' + (cat.diff >= 0 ? '+' : '') + fmt(cat.diff) + '</span>';
+      html += progressBar(cat.planned, cat.actual);
+      html += '</div></div>';
+
+      // Body
+      html += '<div class="budget-cat-body' + (isOpen ? ' open' : '') + '" data-cat-body="' + cat.category + '">';
+
+      // Items
+      cat.items.forEach((item, ii) => {
+        html += '<div class="budget-item-row">';
+        html += '<input type="text" value="' + (item.description || '').replace(/"/g, '&quot;') + '" placeholder="Description" data-ci="' + ci + '" data-ii="' + ii + '" data-field="description">';
+        html += '<input type="number" value="' + (item.amount || '') + '" placeholder="0" min="0" step="100" data-ci="' + ci + '" data-ii="' + ii + '" data-field="amount">';
+        html += '<button class="budget-item-remove" data-ci="' + ci + '" data-ii="' + ii + '" title="Remove">&times;</button>';
+        html += '</div>';
+      });
+
+      // Add item button
+      html += '<div class="budget-add-item"><button data-ci="' + ci + '">+ Add expense</button></div>';
+      html += '</div></div>';
     });
 
-    // Total row
-    html += '<tr class="total-row">';
-    html += '<td>Total</td>';
-    html += '<td style="text-align:right" id="budgetTotalPlanned">' + fmt(data.total_planned) + '</td>';
-    html += '<td style="text-align:right">' + fmt(data.total_actual) + '</td>';
-    html += '<td style="text-align:right" class="' + diffClass(data.total_diff) + '">' + (data.total_diff >= 0 ? '+' : '') + fmt(data.total_diff) + '</td>';
-    html += '<td></td>';
-    html += '</tr>';
-
-    html += '</tbody></table>';
-
-    // Add category row
-    html += '<div class="budget-add-row">';
+    // Add category
+    html += '<div class="budget-add-cat">';
     html += '<select id="budgetAddCat"><option value="">Add category...</option></select>';
-    html += '<input type="number" id="budgetAddAmt" placeholder="Amount" min="0" step="100" style="width:110px;text-align:right">';
-    html += '<button id="budgetAddBtn">+ Add</button>';
+    html += '<button id="budgetAddBtn">+ Add Category</button>';
     html += '</div>';
 
     // Actions
@@ -1078,7 +1130,7 @@
 
     budgetContent.innerHTML = html;
 
-    // Populate add-category dropdown with categories not yet in the table
+    // Populate add-category dropdown
     const existingCats = new Set(data.categories.map(c => c.category));
     const addCatSelect = document.getElementById('budgetAddCat');
     allCategories.forEach(cat => {
@@ -1090,21 +1142,78 @@
       }
     });
 
-    // Add category button
-    document.getElementById('budgetAddBtn').addEventListener('click', () => {
-      const cat = addCatSelect.value;
-      const amt = parseFloat(document.getElementById('budgetAddAmt').value) || 0;
-      if (!cat) return;
-      budgetData.categories.push({ category: cat, planned: amt, actual: 0, diff: amt });
-      budgetData.total_planned += amt;
-      budgetData.total_diff += amt;
-      budgetDirty = true;
-      renderBudget(budgetData);
+    // --- Event listeners ---
+
+    // Toggle category expand
+    budgetContent.querySelectorAll('.budget-cat-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const cat = header.dataset.cat;
+        const body = budgetContent.querySelector('[data-cat-body="' + cat + '"]');
+        body.classList.toggle('open');
+        if (body.classList.contains('open')) {
+          budgetOpenCats.add(cat);
+        } else {
+          budgetOpenCats.delete(cat);
+        }
+      });
     });
 
-    // Track changes
-    budgetContent.querySelectorAll('.budget-input').forEach(input => {
-      input.addEventListener('input', () => { budgetDirty = true; });
+    // Input changes - update data model in place
+    budgetContent.querySelectorAll('.budget-item-row input').forEach(input => {
+      input.addEventListener('change', () => {
+        const ci = parseInt(input.dataset.ci);
+        const ii = parseInt(input.dataset.ii);
+        const field = input.dataset.field;
+        if (field === 'amount') {
+          budgetData.categories[ci].items[ii].amount = parseFloat(input.value) || 0;
+          recalcBudgetData();
+          renderBudget();
+        } else {
+          budgetData.categories[ci].items[ii].description = input.value;
+        }
+      });
+    });
+
+    // Remove item
+    budgetContent.querySelectorAll('.budget-item-remove').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ci = parseInt(btn.dataset.ci);
+        const ii = parseInt(btn.dataset.ii);
+        budgetOpenCats.add(budgetData.categories[ci].category);
+        budgetData.categories[ci].items.splice(ii, 1);
+        // Remove category if no items and no actual spending
+        if (budgetData.categories[ci].items.length === 0 && budgetData.categories[ci].actual === 0) {
+          budgetData.categories.splice(ci, 1);
+        }
+        recalcBudgetData();
+        renderBudget();
+      });
+    });
+
+    // Add item to category
+    budgetContent.querySelectorAll('.budget-add-item button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ci = parseInt(btn.dataset.ci);
+        budgetOpenCats.add(budgetData.categories[ci].category);
+        budgetData.categories[ci].items.push({ description: '', amount: 0 });
+        recalcBudgetData();
+        renderBudget();
+        // Focus the new description input
+        const rows = budgetContent.querySelectorAll('.budget-item-row input[data-ci="' + ci + '"][data-field="description"]');
+        if (rows.length) rows[rows.length - 1].focus();
+      });
+    });
+
+    // Add category
+    document.getElementById('budgetAddBtn').addEventListener('click', () => {
+      const cat = addCatSelect.value;
+      if (!cat) return;
+      budgetData.categories.push({ category: cat, items: [{ description: '', amount: 0 }], planned: 0, actual: 0, diff: 0 });
+      budgetOpenCats.add(cat);
+      recalcBudgetData();
+      renderBudget();
     });
 
     // Save
@@ -1116,12 +1225,17 @@
 
   function saveBudget() {
     const month = budgetMonthEl.value;
-    const inputs = budgetContent.querySelectorAll('.budget-input');
-    const entries = [];
-    inputs.forEach(input => {
-      entries.push({
-        category: input.dataset.category,
-        amount: parseFloat(input.value) || 0,
+    // Collect all items from all categories
+    const items = [];
+    budgetData.categories.forEach(cat => {
+      cat.items.forEach(item => {
+        if (item.amount > 0 || item.description.trim()) {
+          items.push({
+            category: cat.category,
+            description: item.description,
+            amount: item.amount,
+          });
+        }
       });
     });
 
@@ -1132,18 +1246,16 @@
     fetch('/api/budget', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ month, entries }),
+      body: JSON.stringify({ month, items }),
     })
       .then(r => r.json())
       .then(data => {
         saveBtn.disabled = false;
         saveBtn.textContent = 'Save Plan';
         if (data.error) { alert('Error: ' + data.error); return; }
-        budgetDirty = false;
         const status = document.getElementById('budgetStatus');
         status.classList.add('show');
         setTimeout(() => status.classList.remove('show'), 2000);
-        // Refresh to get updated diff values
         fetchBudget();
       })
       .catch(err => {
@@ -1168,29 +1280,26 @@
           alert('No budget found for ' + prevMonth);
           return;
         }
-        // Merge previous planned amounts into current view
-        const currentCats = new Set((budgetData ? budgetData.categories : []).map(c => c.category));
-        const prevPlans = data.categories.filter(c => c.planned > 0);
-        if (!prevPlans.length) { alert('No planned amounts found for ' + prevMonth); return; }
+        const prevWithItems = data.categories.filter(c => c.items.length > 0);
+        if (!prevWithItems.length) { alert('No planned items found for ' + prevMonth); return; }
 
-        prevPlans.forEach(prev => {
-          const existing = budgetData.categories.find(c => c.category === prev.category);
+        prevWithItems.forEach(prevCat => {
+          const existing = budgetData.categories.find(c => c.category === prevCat.category);
           if (existing) {
-            existing.planned = prev.planned;
-            existing.diff = prev.planned - existing.actual;
+            existing.items = prevCat.items.map(it => ({ description: it.description, amount: it.amount }));
           } else {
             budgetData.categories.push({
-              category: prev.category,
-              planned: prev.planned,
+              category: prevCat.category,
+              items: prevCat.items.map(it => ({ description: it.description, amount: it.amount })),
               actual: 0,
-              diff: prev.planned,
+              planned: 0,
+              diff: 0,
             });
           }
+          budgetOpenCats.add(prevCat.category);
         });
-        budgetData.total_planned = budgetData.categories.reduce((s, c) => s + c.planned, 0);
-        budgetData.total_diff = budgetData.total_planned - budgetData.total_actual;
-        budgetDirty = true;
-        renderBudget(budgetData);
+        recalcBudgetData();
+        renderBudget();
       })
       .catch(err => {
         alert('Error loading previous month budget');
