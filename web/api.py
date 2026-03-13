@@ -641,6 +641,77 @@ def save_budget():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/api/monthly-expenses")
+def monthly_expenses():
+    """Return all expenses for a month with their IDs for editing."""
+    try:
+        month = request.args.get("month")
+        if not month:
+            return jsonify({"error": "month parameter is required"}), 400
+
+        try:
+            dt = datetime.strptime(month, "%Y-%m")
+        except ValueError:
+            return jsonify({"error": "month must be YYYY-MM"}), 400
+
+        dt_from = datetime(dt.year, dt.month, 1)
+        if dt.month == 12:
+            dt_to = datetime(dt.year + 1, 1, 1)
+        else:
+            dt_to = datetime(dt.year, dt.month + 1, 1)
+
+        pool = _run(_get_web_pool())
+        rows = _run(pool.fetch("""
+            SELECT id, timestamp, amount, currency, category, description
+            FROM expenses
+            WHERE timestamp >= $1 AND timestamp < $2
+            ORDER BY timestamp DESC
+        """, dt_from, dt_to))
+
+        data = []
+        for row in rows:
+            data.append({
+                "id": row["id"],
+                "timestamp": row["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                "amount": float(row["amount"]),
+                "currency": row["currency"],
+                "category": row["category"],
+                "description": row["description"] or "",
+            })
+
+        return jsonify(data)
+    except Exception as e:
+        logger.error(f"Error fetching monthly expenses: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/expenses/<int:expense_id>/category", methods=["PATCH"])
+def update_expense_category(expense_id):
+    """Update the category of a specific expense."""
+    try:
+        body = request.get_json()
+        if not body or "category" not in body:
+            return jsonify({"error": "category is required"}), 400
+
+        category = body["category"].strip()
+        if not category:
+            return jsonify({"error": "category cannot be empty"}), 400
+
+        pool = _run(_get_web_pool())
+        result = _run(pool.execute(
+            "UPDATE expenses SET category = $1 WHERE id = $2",
+            category, expense_id,
+        ))
+
+        if result == "UPDATE 0":
+            return jsonify({"error": "expense not found"}), 404
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error updating expense category: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/category-expenses")
 def category_expenses():
     """Return expenses for a specific category within a month."""

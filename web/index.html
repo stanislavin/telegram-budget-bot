@@ -207,6 +207,20 @@
     display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
   }
   .budget-totals .summary-card { flex: 1; min-width: 140px; }
+
+  /* Edit expenses tab */
+  .edit-expenses-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  .edit-expenses-table th { text-align: left; padding: 10px 8px; border-bottom: 2px solid #e5e5e5; color: #666; font-weight: 600; }
+  .edit-expenses-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
+  .edit-expenses-table tr:hover td { background: #f9f9f9; }
+  .edit-expenses-table select {
+    padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px;
+    font-size: 0.85rem; background: #fff; cursor: pointer;
+  }
+  .edit-expenses-table select:focus { outline: none; border-color: #4f46e5; }
+  .edit-expenses-table select.changed { border-color: #4f46e5; background: #f5f5ff; font-weight: 600; }
+  .cat-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
+  .cat-save-ok.show { opacity: 1; }
 </style>
 </head>
 <body>
@@ -216,6 +230,7 @@
   <button class="tab" id="tabCategories">Categories</button>
   <button class="tab" id="tabAnalytics">Analytics</button>
   <button class="tab" id="tabBudget">Budget</button>
+  <button class="tab" id="tabExpenses">Expenses</button>
 </div>
 <div class="controls" id="trendsControls">
   <div class="control-group">
@@ -314,6 +329,16 @@
   <div class="loading" id="budgetLoading">Loading...</div>
   <div id="budgetContent"></div>
 </div>
+<div class="controls" id="editExpensesControls" style="display: none;">
+  <div class="control-group">
+    <label>Month</label>
+    <input type="month" id="editExpensesMonth">
+  </div>
+</div>
+<div class="chart-container" id="editExpensesContainer" style="display: none;">
+  <div class="loading" id="editExpensesLoading">Loading...</div>
+  <div id="editExpensesContent"></div>
+</div>
 <div class="expenses-panel" id="expensesPanel">
   <button class="expenses-close" id="expensesClose">&times;</button>
   <h2 id="expensesTitle">Expenses</h2>
@@ -355,6 +380,7 @@
   const tabCategories = document.getElementById('tabCategories');
   const tabAnalytics  = document.getElementById('tabAnalytics');
   const tabBudget     = document.getElementById('tabBudget');
+  const tabExpenses   = document.getElementById('tabExpenses');
   const trendsControls = document.getElementById('trendsControls');
   const categoriesControls = document.getElementById('categoriesControls');
   const analyticsControls = document.getElementById('analyticsControls');
@@ -366,6 +392,11 @@
   const budgetMonthEl = document.getElementById('budgetMonth');
   const budgetLoading = document.getElementById('budgetLoading');
   const budgetContent = document.getElementById('budgetContent');
+  const editExpensesControls = document.getElementById('editExpensesControls');
+  const editExpensesContainer = document.getElementById('editExpensesContainer');
+  const editExpensesMonthEl = document.getElementById('editExpensesMonth');
+  const editExpensesLoading = document.getElementById('editExpensesLoading');
+  const editExpensesContent = document.getElementById('editExpensesContent');
   const analyticsLoading = document.getElementById('analyticsLoading');
   const analyticsContent = document.getElementById('analyticsContent');
   const analyticsCurrencyEl = document.getElementById('analyticsCurrency');
@@ -397,6 +428,7 @@
   const nextMonth = new Date(today);
   nextMonth.setMonth(nextMonth.getMonth() + 1);
   budgetMonthEl.value = nextMonth.toISOString().slice(0, 7);
+  editExpensesMonthEl.value = today.toISOString().slice(0, 7);
 
   function monthToFrom(val) { return val + '-01'; }
   function monthToTo(val) {
@@ -496,7 +528,7 @@
 
   // --- Tab switching ---
   function switchTab(activeTab) {
-    const tabs = [tabTrends, tabCategories, tabAnalytics, tabBudget];
+    const tabs = [tabTrends, tabCategories, tabAnalytics, tabBudget, tabExpenses];
     tabs.forEach(t => t.classList.remove('active'));
     activeTab.classList.add('active');
 
@@ -504,16 +536,19 @@
     categoriesControls.style.display = activeTab === tabCategories ? 'flex' : 'none';
     analyticsControls.style.display = activeTab === tabAnalytics ? 'flex' : 'none';
     budgetControls.style.display = activeTab === tabBudget ? 'flex' : 'none';
+    editExpensesControls.style.display = activeTab === tabExpenses ? 'flex' : 'none';
     trendsContainer.style.display = activeTab === tabTrends ? 'block' : 'none';
     categoriesContainer.style.display = activeTab === tabCategories ? 'block' : 'none';
     analyticsContainer.style.display = activeTab === tabAnalytics ? 'block' : 'none';
     budgetContainer.style.display = activeTab === tabBudget ? 'block' : 'none';
+    editExpensesContainer.style.display = activeTab === tabExpenses ? 'block' : 'none';
   }
 
   tabTrends.addEventListener('click', () => { switchTab(tabTrends); fetchData(); });
   tabCategories.addEventListener('click', () => { switchTab(tabCategories); fetchMonthlyCategories(); });
   tabAnalytics.addEventListener('click', () => { switchTab(tabAnalytics); fetchAnalytics(); });
   tabBudget.addEventListener('click', () => { switchTab(tabBudget); fetchBudget(); });
+  tabExpenses.addEventListener('click', () => { switchTab(tabExpenses); fetchEditExpenses(); });
 
   // Load categories
   fetch('/api/categories')
@@ -922,6 +957,7 @@
   });
 
   budgetMonthEl.addEventListener('change', fetchBudget);
+  editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
 
   // --- Analytics ---
   function fetchAnalytics() {
@@ -1335,6 +1371,86 @@
         alert('Error loading previous month budget');
         console.error(err);
       });
+  }
+  // --- Edit Expenses ---
+  function fetchEditExpenses() {
+    const month = editExpensesMonthEl.value;
+    if (!month) return;
+
+    editExpensesLoading.style.display = 'block';
+    editExpensesContent.innerHTML = '';
+
+    fetch('/api/monthly-expenses?month=' + month)
+      .then(r => r.json())
+      .then(data => {
+        editExpensesLoading.style.display = 'none';
+        if (data.error) { editExpensesContent.innerHTML = '<p style="color:#c00">' + data.error + '</p>'; return; }
+        renderEditExpenses(data);
+      })
+      .catch(err => {
+        editExpensesLoading.style.display = 'none';
+        editExpensesContent.innerHTML = '<p style="color:#c00">Error loading expenses</p>';
+        console.error(err);
+      });
+  }
+
+  function renderEditExpenses(data) {
+    if (!data.length) {
+      editExpensesContent.innerHTML = '<p style="color:#999;padding:20px 0">No expenses for this month</p>';
+      return;
+    }
+
+    let html = '<table class="edit-expenses-table"><thead><tr>';
+    html += '<th>Date</th><th>Amount</th><th>Category</th><th>Description</th>';
+    html += '</tr></thead><tbody>';
+
+    data.forEach(exp => {
+      html += '<tr>';
+      html += '<td>' + exp.timestamp + '</td>';
+      html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
+      html += '<td>';
+      html += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '">';
+      allCategories.forEach(cat => {
+        html += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
+      });
+      html += '</select>';
+      html += '<span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span>';
+      html += '</td>';
+      html += '<td>' + (exp.description || '') + '</td>';
+      html += '</tr>';
+    });
+
+    html += '</tbody></table>';
+    editExpensesContent.innerHTML = html;
+
+    // Attach change handlers
+    editExpensesContent.querySelectorAll('select[data-id]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const id = sel.dataset.id;
+        const newCat = sel.value;
+        const orig = sel.dataset.orig;
+        sel.classList.toggle('changed', newCat !== orig);
+
+        fetch('/api/expenses/' + id + '/category', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: newCat }),
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.error) { alert('Error: ' + resp.error); return; }
+            sel.dataset.orig = newCat;
+            sel.classList.remove('changed');
+            const ok = document.getElementById('save-ok-' + id);
+            ok.classList.add('show');
+            setTimeout(() => ok.classList.remove('show'), 1500);
+          })
+          .catch(err => {
+            alert('Error saving category');
+            console.error(err);
+          });
+      });
+    });
   }
 })();
 </script>
