@@ -1336,8 +1336,9 @@
     const month = budgetMonthEl.value;
     if (!month) return;
     const [y, m] = month.split('-').map(Number);
-    const prev = new Date(y, m - 2, 1);
-    const prevMonth = prev.toISOString().slice(0, 7);
+    const prevMonth = (m === 1)
+      ? (y - 1) + '-12'
+      : y + '-' + String(m - 1).padStart(2, '0');
 
     fetch('/api/budget?month=' + prevMonth)
       .then(r => r.json())
