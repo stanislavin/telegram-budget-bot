@@ -32,6 +32,7 @@ GOOGLE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 # Local LLM Configuration (preferred, on tailnet)
 LOCAL_LLM_URL = os.getenv('LOCAL_LLM_URL', 'http://localhost:1234/v1/chat/completions')
 LOCAL_LLM_MODEL = os.getenv('LOCAL_LLM_MODEL', 'zai-org/glm-4.7-flash')
+LOCAL_LLM_TIMEOUT = int(os.getenv('LOCAL_LLM_TIMEOUT', '15'))
 
 # OpenRouter Configuration (fallback)
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')

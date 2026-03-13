@@ -9,6 +9,7 @@ from util.config import (
     OPENROUTER_URL,
     LOCAL_LLM_URL,
     LOCAL_LLM_MODEL,
+    LOCAL_LLM_TIMEOUT,
     get_llm_prompt
 )
 from util.retry_handler import with_retry
@@ -19,9 +20,6 @@ logger = logging.getLogger(__name__)
 SUPPORTED_CURRENCIES = {'RSD', 'EUR', 'RUB'}
 
 VALID_SPENDING_TYPES = {'need', 'want', 'invest'}
-
-# Short timeout for local LLM — fail fast if unreachable
-LOCAL_LLM_TIMEOUT = 15
 
 
 def _call_chat_completion(url, headers, model, messages, timeout=30):
