@@ -533,12 +533,21 @@ def get_budget():
                    e.amount AS orig_amount, e.currency AS orig_currency,
                    CASE
                        WHEN e.currency = 'RUB' THEN e.amount
-                       ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                       ELSE e.amount * COALESCE(
+                           cr_exact.rate_to_rub,
+                           cr_latest.rate_to_rub,
+                           1
+                       )
                    END AS converted_amount
             FROM expenses e
-            LEFT JOIN currency_rates cr_source
-                ON cr_source.currency = e.currency
-                AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
+            LEFT JOIN currency_rates cr_exact
+                ON cr_exact.currency = e.currency
+                AND cr_exact.month = DATE_TRUNC('month', e.timestamp)::date
+            LEFT JOIN LATERAL (
+                SELECT rate_to_rub FROM currency_rates
+                WHERE currency = e.currency
+                ORDER BY month DESC LIMIT 1
+            ) cr_latest ON cr_exact.rate_to_rub IS NULL
             WHERE e.timestamp >= $1 AND e.timestamp < $2
             ORDER BY e.timestamp DESC
         """, dt_from, dt_to))
