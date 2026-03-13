@@ -488,10 +488,13 @@ async def test_handle_message_recent_expenses_button(
     """Test '📅 Recent Expenses' button handling."""
     mock_update.message.text = "📅 Recent Expenses"
     mock_get_recent_expenses.return_value = "Recent expenses data"
+    # reply_text returns a message object that will be edited with results
+    status_msg = AsyncMock()
+    mock_update.message.reply_text.return_value = status_msg
     await handle_message(mock_update, mock_context)
     mock_update.message.reply_text.assert_any_call("🔄 Fetching recent expenses...")
     mock_get_recent_expenses.assert_called_once()
-    mock_update.message.reply_text.assert_any_call("Recent expenses data")
+    status_msg.edit_text.assert_called_once()
 
 
 @pytest.mark.asyncio

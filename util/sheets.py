@@ -270,7 +270,7 @@ async def get_daily_summary(target_date: datetime = None):
         logger.error(f"Error fetching daily summary: {str(e)}", exc_info=True)
         return f"Error fetching daily summary: {str(e)}", None
 
-async def get_recent_expenses(days: int = 2):
+async def get_recent_expenses(days: int = 2, category: str = None, spending_type: str = None):
     """Fetch expenses from the last N days from Google Sheets."""
     try:
         service = get_google_sheets_service()
@@ -318,13 +318,16 @@ async def get_recent_expenses(days: int = 2):
                     # Check if the expense is within the last N days
                     if start_date <= timestamp.date() <= today:
                         amount = float(row[1])  # Column B
-                        category = row[2]  # Column C
+                        row_category = row[2]  # Column C
                         description = row[3]  # Column D
                         currency = row[5]  # Column F
-                        
+
+                        if category and row_category != category:
+                            continue
+
                         # Format the expense entry
                         formatted_timestamp = timestamp.strftime("%d/%m/%Y %H:%M")
-                        recent_expenses.append(f"{formatted_timestamp} | {amount:.2f} {currency} | {category} | {description}")
+                        recent_expenses.append(f"{formatted_timestamp} | {amount:.2f} {currency} | {row_category} | {description}")
                         
                         # Track per-currency totals
                         if currency in currency_totals:

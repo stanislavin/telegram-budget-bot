@@ -358,6 +358,80 @@ def _confirmation_keyboard(expense_id: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(keyboard)
 
 
+def _expenses_filter_keyboard(active_type: str = None, active_category: str = None) -> InlineKeyboardMarkup:
+    """Build inline keyboard for filtering recent expenses."""
+    rows = []
+
+    # Type filter row
+    type_buttons = []
+    for label, value in [("All", "all"), ("Needs", "need"), ("Wants", "want"), ("Invest", "invest")]:
+        prefix = ">> " if (value == "all" and not active_type and not active_category) or active_type == value else ""
+        type_buttons.append(
+            InlineKeyboardButton(
+                f"{prefix}{label}",
+                callback_data=f"action:expenses_filter|type:{value}",
+            )
+        )
+    rows.append(type_buttons)
+
+    # Category filter button
+    cat_label = f"Category: {active_category}" if active_category else "Filter by Category"
+    rows.append([
+        InlineKeyboardButton(cat_label, callback_data="action:expenses_pick_category"),
+    ])
+
+    return InlineKeyboardMarkup(rows)
+
+
+def _category_picker_keyboard() -> InlineKeyboardMarkup:
+    """Build inline keyboard to pick a category for filtering expenses."""
+    keyboard = []
+    row = []
+    for i, cat in enumerate(CATEGORIES):
+        row.append(
+            InlineKeyboardButton(cat, callback_data=f"action:expenses_filter|category:{cat}")
+        )
+        if len(row) == 3 or i == len(CATEGORIES) - 1:
+            keyboard.append(row)
+            row = []
+    keyboard.append([
+        InlineKeyboardButton("Show All", callback_data="action:expenses_filter|type:all"),
+    ])
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def _send_filtered_expenses(message_to_edit, category: str = None, spending_type: str = None):
+    """Fetch and display filtered expenses, editing the given message."""
+    _get_recent = get_recent_expenses_pg if DATABASE_URL else get_recent_expenses
+
+    kwargs = {}
+    if category:
+        kwargs["category"] = category
+    if spending_type:
+        kwargs["spending_type"] = spending_type
+
+    expenses_text = await _get_recent(**kwargs)
+
+    # Add filter label
+    filter_label = ""
+    if spending_type:
+        filter_label = f" [{spending_type}]"
+    elif category:
+        filter_label = f" [{category}]"
+
+    reply_markup = _expenses_filter_keyboard(
+        active_type=spending_type,
+        active_category=category,
+    )
+
+    # Telegram messages have a 4096 char limit; truncate if needed
+    max_len = 4096 - 100  # leave room for markup overhead
+    if len(expenses_text) > max_len:
+        expenses_text = expenses_text[:max_len] + "\n... (truncated)"
+
+    await message_to_edit.edit_text(expenses_text, reply_markup=reply_markup)
+
+
 def format_daily_totals(currency_totals: dict) -> str:
     """Format currency_totals dict into a human-readable string."""
     return ", ".join(f"{amount:.2f} {cur}" for cur, amount in currency_totals.items())
@@ -609,6 +683,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_sheet_retry(query, expense_id)
         return
 
+    if action == "expenses_filter":
+        filter_type = data.get("type")
+        filter_category = data.get("category")
+        spending_type = filter_type if filter_type and filter_type != "all" else None
+        await _send_filtered_expenses(
+            query.message,
+            category=filter_category,
+            spending_type=spending_type,
+        )
+        return
+
+    if action == "expenses_pick_category":
+        await query.message.edit_text(
+            "Select a category to filter by:",
+            reply_markup=_category_picker_keyboard(),
+        )
+        return
+
     # Actions that require a pending expense and lock
     lock = expense_locks.setdefault(expense_id, asyncio.Lock())
     async with lock:
@@ -664,10 +756,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await help_command(update, context)
         return
     elif message == "📅 Recent Expenses":
-        await update.message.reply_text("🔄 Fetching recent expenses...")
-        _get_recent = get_recent_expenses_pg if DATABASE_URL else get_recent_expenses
-        expenses_text = await _get_recent()
-        await update.message.reply_text(expenses_text)
+        status_msg = await update.message.reply_text("🔄 Fetching recent expenses...")
+        await _send_filtered_expenses(status_msg)
         return
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
