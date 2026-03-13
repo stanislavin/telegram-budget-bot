@@ -527,24 +527,38 @@ def get_budget():
                 "amount": round(float(r["amount"]), 2),
             })
 
-        # Get actual spending (converted to RUB)
-        actual_rows = _run(pool.fetch("""
-            SELECT e.category,
-                   SUM(
-                       CASE
-                           WHEN e.currency = 'RUB' THEN e.amount
-                           ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
-                       END
-                   ) AS total
+        # Get actual expenses with details (converted to RUB)
+        expense_rows = _run(pool.fetch("""
+            SELECT e.category, e.timestamp, e.description,
+                   e.amount AS orig_amount, e.currency AS orig_currency,
+                   CASE
+                       WHEN e.currency = 'RUB' THEN e.amount
+                       ELSE e.amount * COALESCE(cr_source.rate_to_rub, 1)
+                   END AS converted_amount
             FROM expenses e
             LEFT JOIN currency_rates cr_source
                 ON cr_source.currency = e.currency
                 AND cr_source.month = DATE_TRUNC('month', e.timestamp)::date
             WHERE e.timestamp >= $1 AND e.timestamp < $2
-            GROUP BY e.category
-            ORDER BY total DESC
+            ORDER BY e.timestamp DESC
         """, dt_from, dt_to))
-        actuals = {r["category"]: round(float(r["total"]), 2) for r in actual_rows}
+
+        # Group expenses by category
+        actuals = {}
+        expenses_by_cat = {}
+        for r in expense_rows:
+            cat = r["category"]
+            amt = round(float(r["converted_amount"]), 2)
+            actuals[cat] = actuals.get(cat, 0) + amt
+            expenses_by_cat.setdefault(cat, []).append({
+                "timestamp": r["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                "description": r["description"] or "",
+                "amount": amt,
+                "orig_amount": float(r["orig_amount"]),
+                "orig_currency": r["orig_currency"],
+            })
+        # Round totals
+        actuals = {k: round(v, 2) for k, v in actuals.items()}
 
         # Merge all categories from both plans and actuals
         all_cats = sorted(set(list(items_by_cat.keys()) + list(actuals.keys())))
@@ -556,6 +570,7 @@ def get_budget():
             data.append({
                 "category": cat,
                 "items": items,
+                "expenses": expenses_by_cat.get(cat, []),
                 "planned": round(planned, 2),
                 "actual": round(actual, 2),
                 "diff": round(planned - actual, 2),
