@@ -469,9 +469,27 @@ def analytics():
         return jsonify({"error": str(e)}), 500
 
 
+_BUDGET_TABLE_CREATED = False
+
+
+async def _ensure_budget_table(pool):
+    global _BUDGET_TABLE_CREATED
+    if not _BUDGET_TABLE_CREATED:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS budget_plan_items (
+                id SERIAL PRIMARY KEY,
+                month DATE NOT NULL,
+                category VARCHAR NOT NULL,
+                description TEXT NOT NULL DEFAULT '',
+                amount NUMERIC NOT NULL DEFAULT 0
+            )
+        """)
+        _BUDGET_TABLE_CREATED = True
+
+
 @api_bp.route("/api/budget", methods=["GET"])
 def get_budget():
-    """Return budget plan for a month alongside actual spending."""
+    """Return budget plan items grouped by category alongside actual spending."""
     try:
         month = request.args.get("month")
         if not month:
@@ -489,23 +507,25 @@ def get_budget():
             dt_to = datetime(dt.year, dt.month + 1, 1)
 
         pool = _run(_get_web_pool())
+        _run(_ensure_budget_table(pool))
 
-        # Ensure table exists
-        _run(pool.execute("""
-            CREATE TABLE IF NOT EXISTS budget_plans (
-                month DATE NOT NULL,
-                category VARCHAR NOT NULL,
-                planned_amount NUMERIC NOT NULL DEFAULT 0,
-                PRIMARY KEY (month, category)
-            )
-        """))
-
-        # Get planned amounts
-        plan_rows = _run(pool.fetch(
-            "SELECT category, planned_amount FROM budget_plans WHERE month = $1",
+        # Get plan items
+        item_rows = _run(pool.fetch(
+            """SELECT id, category, description, amount
+               FROM budget_plan_items WHERE month = $1
+               ORDER BY category, id""",
             dt_from.date(),
         ))
-        plans = {r["category"]: float(r["planned_amount"]) for r in plan_rows}
+
+        # Group items by category
+        items_by_cat = {}
+        for r in item_rows:
+            cat = r["category"]
+            items_by_cat.setdefault(cat, []).append({
+                "id": r["id"],
+                "description": r["description"],
+                "amount": round(float(r["amount"]), 2),
+            })
 
         # Get actual spending (converted to RUB)
         actual_rows = _run(pool.fetch("""
@@ -527,13 +547,15 @@ def get_budget():
         actuals = {r["category"]: round(float(r["total"]), 2) for r in actual_rows}
 
         # Merge all categories from both plans and actuals
-        all_cats = sorted(set(list(plans.keys()) + list(actuals.keys())))
+        all_cats = sorted(set(list(items_by_cat.keys()) + list(actuals.keys())))
         data = []
         for cat in all_cats:
-            planned = plans.get(cat, 0)
+            items = items_by_cat.get(cat, [])
+            planned = sum(item["amount"] for item in items)
             actual = actuals.get(cat, 0)
             data.append({
                 "category": cat,
+                "items": items,
                 "planned": round(planned, 2),
                 "actual": round(actual, 2),
                 "diff": round(planned - actual, 2),
@@ -556,14 +578,14 @@ def get_budget():
 
 @api_bp.route("/api/budget", methods=["POST"])
 def save_budget():
-    """Save budget plan entries for a month."""
+    """Save budget plan items for a month (full replace)."""
     try:
         body = request.get_json()
         if not body:
             return jsonify({"error": "JSON body required"}), 400
 
         month = body.get("month")
-        entries = body.get("entries", [])
+        items = body.get("items", [])
 
         if not month:
             return jsonify({"error": "month is required"}), 400
@@ -576,41 +598,27 @@ def save_budget():
         month_date = datetime(dt.year, dt.month, 1).date()
 
         pool = _run(_get_web_pool())
+        _run(_ensure_budget_table(pool))
 
-        # Ensure table exists
-        _run(pool.execute("""
-            CREATE TABLE IF NOT EXISTS budget_plans (
-                month DATE NOT NULL,
-                category VARCHAR NOT NULL,
-                planned_amount NUMERIC NOT NULL DEFAULT 0,
-                PRIMARY KEY (month, category)
-            )
-        """))
+        # Delete all existing items for this month, then insert new ones
+        _run(pool.execute(
+            "DELETE FROM budget_plan_items WHERE month = $1", month_date
+        ))
 
-        # Upsert each entry
-        for entry in entries:
-            category = entry.get("category", "").strip()
-            amount = entry.get("amount", 0)
-            if not category:
-                continue
+        for item in items:
+            category = item.get("category", "").strip()
+            description = item.get("description", "").strip()
             try:
-                amount = float(amount)
+                amount = float(item.get("amount", 0))
             except (ValueError, TypeError):
                 amount = 0
-
-            if amount > 0:
-                _run(pool.execute("""
-                    INSERT INTO budget_plans (month, category, planned_amount)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (month, category)
-                    DO UPDATE SET planned_amount = $3
-                """, month_date, category, amount))
-            else:
-                # Remove zero entries
-                _run(pool.execute(
-                    "DELETE FROM budget_plans WHERE month = $1 AND category = $2",
-                    month_date, category,
-                ))
+            if not category or amount <= 0:
+                continue
+            _run(pool.execute(
+                """INSERT INTO budget_plan_items (month, category, description, amount)
+                   VALUES ($1, $2, $3, $4)""",
+                month_date, category, description, amount,
+            ))
 
         return jsonify({"ok": True})
     except Exception as e:
