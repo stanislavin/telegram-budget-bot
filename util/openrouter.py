@@ -3,10 +3,12 @@ import requests
 import asyncio
 
 from util.config import (
-    OPENROUTER_API_KEY, 
-    OPENROUTER_LLM_VERSION, 
+    OPENROUTER_API_KEY,
+    OPENROUTER_LLM_VERSION,
     OPENROUTER_FALLBACK_MODELS,
-    OPENROUTER_URL, 
+    OPENROUTER_URL,
+    LOCAL_LLM_URL,
+    LOCAL_LLM_MODEL,
     get_llm_prompt
 )
 from util.retry_handler import with_retry
@@ -17,6 +19,46 @@ logger = logging.getLogger(__name__)
 SUPPORTED_CURRENCIES = {'RSD', 'EUR', 'RUB'}
 
 VALID_SPENDING_TYPES = {'need', 'want', 'invest'}
+
+# Short timeout for local LLM — fail fast if unreachable
+LOCAL_LLM_TIMEOUT = 15
+
+
+def _call_chat_completion(url, headers, model, messages, timeout=30):
+    """Make a chat completion request and return (content, model)."""
+    data = {"model": model, "messages": messages}
+    response = requests.post(url, headers=headers, json=data, timeout=timeout)
+    if 400 <= response.status_code < 500:
+        raise ValueError(f"HTTP {response.status_code}: {response.text}")
+    response.raise_for_status()
+    content = response.json()['choices'][0]['message']['content'].strip()
+    return content, model
+
+
+def _build_provider_chain():
+    """Build ordered list of (url, headers, model, timeout) to try."""
+    chain = []
+
+    # Preferred: local LLM on tailnet (no auth needed)
+    if LOCAL_LLM_URL and LOCAL_LLM_MODEL:
+        chain.append((
+            LOCAL_LLM_URL,
+            {"Content-Type": "application/json"},
+            LOCAL_LLM_MODEL,
+            LOCAL_LLM_TIMEOUT,
+        ))
+
+    # Fallback: OpenRouter models
+    openrouter_headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",
+    }
+    for model in [OPENROUTER_LLM_VERSION] + OPENROUTER_FALLBACK_MODELS:
+        chain.append((OPENROUTER_URL, openrouter_headers, model, 30))
+
+    return chain
+
 
 def _parse_openrouter_response(formatted_text: str):
     """Helper function to parse OpenRouter API response."""
@@ -52,51 +94,22 @@ def _parse_openrouter_response(formatted_text: str):
 
 @with_retry(max_retries=1, error_message="Error processing with OpenRouter")
 async def process_with_openrouter(message: str) -> tuple:
-    """Process message using OpenRouter API and return formatted data and model used."""
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",
-    }
-
+    """Process message using LLM and return formatted data and model used."""
     prompt = get_llm_prompt() + "\n\nDescription of expense is: " + message
-    
-    models_to_try = [OPENROUTER_LLM_VERSION] + OPENROUTER_FALLBACK_MODELS
-    last_error = None
+    messages = [{"role": "user", "content": prompt}]
 
-    for model in models_to_try:
+    last_error = None
+    for url, headers, model, timeout in _build_provider_chain():
         try:
             logger.info(f"Attempting to process with model: {model}")
-            data = {
-                "model": model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ]
-            }
-
-            response = await asyncio.to_thread(requests.post, OPENROUTER_URL, headers=headers, json=data)
-            
-            # If we get a 4xx error, we might want to try the next model
-            if 400 <= response.status_code < 500:
-                logger.warning(f"Model {model} failed with status {response.status_code}: {response.text}")
-                last_error = f"HTTP {response.status_code}: {response.text}"
-                continue
-                
-            response.raise_for_status()
-
-            # Extract the formatted response
-            formatted_text = response.json()['choices'][0]['message']['content'].strip()
-            parsed_data = _parse_openrouter_response(formatted_text)
-            
-            return parsed_data, model
-            
+            content, used_model = await asyncio.to_thread(
+                _call_chat_completion, url, headers, model, messages, timeout
+            )
+            parsed_data = _parse_openrouter_response(content)
+            return parsed_data, used_model
         except Exception as e:
             logger.error(f"Error with model {model}: {str(e)}")
             last_error = str(e)
-            # For non-4xx errors, we might still want to try the next model if it's a connection issue
             continue
 
     raise RuntimeError(f"All models failed. Last error: {last_error}")
