@@ -6,7 +6,7 @@ from threading import Thread
 import asyncpg
 from flask import Blueprint, jsonify, request
 
-from util.config import DATABASE_URL
+from util.config import DATABASE_URL, OPENROUTER_API_KEY, OPENROUTER_LLM_VERSION, OPENROUTER_URL
 from util.postgres import _clean_dsn
 
 logger = logging.getLogger(__name__)
@@ -838,4 +838,75 @@ def category_expenses():
         return jsonify(data)
     except Exception as e:
         logger.error(f"Error fetching category expenses: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/analyze", methods=["POST"])
+def analyze_expenses():
+    """Send expenses + user prompt to OpenRouter for analysis."""
+    try:
+        import requests as req
+
+        body = request.get_json()
+        if not body:
+            return jsonify({"error": "JSON body required"}), 400
+
+        prompt = body.get("prompt", "").strip()
+        expenses = body.get("expenses", [])
+
+        if not prompt:
+            return jsonify({"error": "prompt is required"}), 400
+        if not expenses:
+            return jsonify({"error": "no expenses to analyze"}), 400
+
+        # Format expenses as a table for the LLM
+        lines = ["Date | Amount | Currency | Category | Type | Description"]
+        lines.append("-" * 70)
+        for e in expenses:
+            lines.append(
+                f"{e.get('timestamp', '')} | "
+                f"{e.get('amount', '')} | "
+                f"{e.get('currency', '')} | "
+                f"{e.get('category', '')} | "
+                f"{e.get('spending_type', '') or ''} | "
+                f"{e.get('description', '')}"
+            )
+
+        expenses_text = "\n".join(lines)
+
+        system_msg = (
+            "You are a helpful financial analyst. The user will provide a list of "
+            "their expenses and a question or prompt. Analyze the expenses and "
+            "respond clearly and concisely. Use markdown formatting for readability. "
+            "When mentioning amounts, include the currency."
+        )
+
+        user_msg = (
+            f"Here are my expenses:\n\n```\n{expenses_text}\n```\n\n"
+            f"My question: {prompt}"
+        )
+
+        headers = {
+            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/stanislavin/telegram-budget-bot",
+        }
+
+        data = {
+            "model": OPENROUTER_LLM_VERSION,
+            "messages": [
+                {"role": "system", "content": system_msg},
+                {"role": "user", "content": user_msg},
+            ],
+        }
+
+        response = req.post(OPENROUTER_URL, headers=headers, json=data, timeout=60)
+        response.raise_for_status()
+
+        result = response.json()["choices"][0]["message"]["content"].strip()
+        model = result and OPENROUTER_LLM_VERSION
+
+        return jsonify({"response": result, "model": model})
+    except Exception as e:
+        logger.error(f"Error analyzing expenses: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500

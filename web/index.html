@@ -6,6 +6,7 @@
 <title>Expense Trends</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 20px; }
@@ -227,6 +228,56 @@
   }
   .expense-delete:hover { border-color: #dc2626; color: #dc2626; background: #fef2f2; }
 
+  /* Analyze overlay */
+  .analyze-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.5); z-index: 200; justify-content: center; align-items: flex-start;
+    padding: 60px 20px 20px;
+  }
+  .analyze-overlay.open { display: flex; }
+  .analyze-panel {
+    background: #fff; border-radius: 12px; box-shadow: 0 8px 30px rgba(0,0,0,0.2);
+    width: 100%; max-width: 700px; max-height: calc(100vh - 100px); display: flex; flex-direction: column;
+  }
+  .analyze-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 16px 20px; border-bottom: 1px solid #e5e5e5;
+  }
+  .analyze-header h3 { font-size: 1rem; margin: 0; }
+  .analyze-close { background: none; border: none; font-size: 1.4rem; cursor: pointer; color: #999; }
+  .analyze-close:hover { color: #333; }
+  .analyze-body { padding: 16px 20px; flex: 1; overflow-y: auto; }
+  .analyze-input-row { display: flex; gap: 8px; margin-bottom: 16px; }
+  .analyze-input-row textarea {
+    flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 6px;
+    font-size: 0.9rem; font-family: inherit; resize: vertical; min-height: 60px;
+  }
+  .analyze-input-row textarea:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
+  .analyze-send {
+    padding: 10px 20px; background: #4f46e5; color: #fff; border: none; border-radius: 6px;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer; align-self: flex-end;
+  }
+  .analyze-send:hover { background: #4338ca; }
+  .analyze-send:disabled { background: #a5b4fc; cursor: not-allowed; }
+  .analyze-result { font-size: 0.9rem; line-height: 1.6; }
+  .analyze-result p { margin: 0 0 10px; }
+  .analyze-result ul, .analyze-result ol { margin: 0 0 10px; padding-left: 20px; }
+  .analyze-result code { background: #f5f5f5; padding: 1px 4px; border-radius: 3px; font-size: 0.85rem; }
+  .analyze-result pre { background: #f5f5f5; padding: 12px; border-radius: 6px; overflow-x: auto; margin: 0 0 10px; }
+  .analyze-result pre code { background: none; padding: 0; }
+  .analyze-result h1, .analyze-result h2, .analyze-result h3, .analyze-result h4 { margin: 16px 0 8px; }
+  .analyze-result table { border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.85rem; }
+  .analyze-result th, .analyze-result td { border: 1px solid #e5e5e5; padding: 6px 10px; text-align: left; }
+  .analyze-result th { background: #f9f9f9; font-weight: 600; }
+  .analyze-result strong { font-weight: 600; }
+  .analyze-meta { font-size: 0.75rem; color: #999; margin-top: 12px; }
+  .analyze-spinner { color: #4f46e5; }
+  .btn-analyze {
+    padding: 8px 16px; background: #4f46e5; color: #fff; border: none; border-radius: 6px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer; margin-left: auto;
+  }
+  .btn-analyze:hover { background: #4338ca; }
+
   /* Spending type structure cards */
   .spending-type-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
   .spending-type-card {
@@ -396,6 +447,22 @@
       <option value="invest">Invest</option>
       <option value="unset">Unset</option>
     </select>
+  </div>
+  <button class="btn-analyze" id="analyzeBtn">Analyze</button>
+</div>
+<div class="analyze-overlay" id="analyzeOverlay">
+  <div class="analyze-panel">
+    <div class="analyze-header">
+      <h3>Analyze Expenses</h3>
+      <button class="analyze-close" id="analyzeClose">&times;</button>
+    </div>
+    <div class="analyze-body">
+      <div class="analyze-input-row">
+        <textarea id="analyzePrompt" placeholder="Ask about your expenses... e.g. 'What are my top spending patterns?' or 'Which expenses could I cut?'"></textarea>
+        <button class="analyze-send" id="analyzeSend">Send</button>
+      </div>
+      <div class="analyze-result" id="analyzeResult"></div>
+    </div>
   </div>
 </div>
 <div class="chart-container" id="editExpensesContainer" style="display: none;">
@@ -1664,6 +1731,78 @@
       });
     });
   }
+
+  // --- Analyze ---
+  const analyzeOverlay = document.getElementById('analyzeOverlay');
+  const analyzeClose = document.getElementById('analyzeClose');
+  const analyzeBtn = document.getElementById('analyzeBtn');
+  const analyzeSend = document.getElementById('analyzeSend');
+  const analyzePrompt = document.getElementById('analyzePrompt');
+  const analyzeResult = document.getElementById('analyzeResult');
+
+  analyzeBtn.addEventListener('click', () => {
+    analyzeOverlay.classList.add('open');
+    analyzePrompt.focus();
+  });
+
+  analyzeClose.addEventListener('click', () => {
+    analyzeOverlay.classList.remove('open');
+  });
+
+  analyzeOverlay.addEventListener('click', (e) => {
+    if (e.target === analyzeOverlay) analyzeOverlay.classList.remove('open');
+  });
+
+  analyzePrompt.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+      analyzeSend.click();
+    }
+  });
+
+  analyzeSend.addEventListener('click', () => {
+    const prompt = analyzePrompt.value.trim();
+    if (!prompt) return;
+
+    // Get currently filtered expenses
+    const catFilter = editExpensesCatFilter.value;
+    const typeFilter = editExpensesTypeFilter.value;
+    let filtered = allEditExpenses;
+    if (catFilter) filtered = filtered.filter(e => e.category === catFilter);
+    if (typeFilter === 'unset') filtered = filtered.filter(e => !e.spending_type);
+    else if (typeFilter) filtered = filtered.filter(e => e.spending_type === typeFilter);
+
+    if (!filtered.length) {
+      analyzeResult.innerHTML = '<p style="color:#999">No expenses to analyze with current filters.</p>';
+      return;
+    }
+
+    analyzeSend.disabled = true;
+    analyzeSend.textContent = 'Analyzing...';
+    analyzeResult.innerHTML = '<p class="analyze-spinner">Thinking...</p>';
+
+    fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, expenses: filtered }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        analyzeSend.disabled = false;
+        analyzeSend.textContent = 'Send';
+        if (data.error) {
+          analyzeResult.innerHTML = '<p style="color:#c00">Error: ' + data.error + '</p>';
+          return;
+        }
+        analyzeResult.innerHTML = marked.parse(data.response);
+        analyzeResult.innerHTML += '<div class="analyze-meta">' + filtered.length + ' expenses analyzed</div>';
+      })
+      .catch(err => {
+        analyzeSend.disabled = false;
+        analyzeSend.textContent = 'Send';
+        analyzeResult.innerHTML = '<p style="color:#c00">Error analyzing expenses</p>';
+        console.error(err);
+      });
+  });
 })();
 </script>
 </body>
