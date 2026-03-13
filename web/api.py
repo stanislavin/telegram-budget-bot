@@ -723,6 +723,24 @@ def monthly_expenses():
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/api/expenses/<int:expense_id>", methods=["DELETE"])
+def delete_expense(expense_id):
+    """Delete a specific expense."""
+    try:
+        pool = _run(_get_web_pool())
+        result = _run(pool.execute(
+            "DELETE FROM expenses WHERE id = $1", expense_id,
+        ))
+
+        if result == "DELETE 0":
+            return jsonify({"error": "expense not found"}), 404
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error deleting expense: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/expenses/<int:expense_id>/category", methods=["PATCH"])
 def update_expense_category(expense_id):
     """Update the category of a specific expense."""
