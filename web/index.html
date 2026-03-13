@@ -96,6 +96,41 @@
   .category-details-table th { text-align: left; padding: 8px; border-bottom: 1px solid #e5e5e5; color: #666; font-weight: 600; }
   .category-details-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
   .category-total { font-weight: 600; color: #4f46e5; }
+
+  /* Analytics tab */
+  .analytics-summary { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+  .summary-card {
+    background: #f8f7ff; border-radius: 8px; padding: 16px 20px;
+    flex: 1; min-width: 160px; border: 1px solid #e5e5e5;
+  }
+  .summary-card .label { font-size: 0.75rem; text-transform: uppercase; color: #666; font-weight: 600; margin-bottom: 4px; }
+  .summary-card .value { font-size: 1.4rem; font-weight: 700; color: #4f46e5; }
+  .summary-card .sub { font-size: 0.8rem; color: #999; margin-top: 2px; }
+  .analytics-category { border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+  .analytics-category-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 16px; cursor: pointer; background: #fafafa;
+    transition: background 0.15s;
+  }
+  .analytics-category-header:hover { background: #f0f0ff; }
+  .analytics-category-header .cat-name { font-weight: 600; font-size: 0.95rem; }
+  .analytics-category-header .cat-stats { display: flex; gap: 20px; font-size: 0.85rem; color: #666; }
+  .analytics-category-header .cat-total { font-weight: 600; color: #4f46e5; }
+  .analytics-category-body { display: none; padding: 0 16px 16px; border-top: 1px solid #e5e5e5; }
+  .analytics-category-body.open { display: block; }
+  .analytics-section-title { font-size: 0.8rem; font-weight: 600; color: #666; text-transform: uppercase; margin: 14px 0 8px; }
+  .analytics-expense-list { font-size: 0.85rem; }
+  .analytics-expense-item {
+    display: flex; justify-content: space-between; padding: 6px 0;
+    border-bottom: 1px solid #f0f0f0;
+  }
+  .analytics-expense-item:last-child { border-bottom: none; }
+  .analytics-expense-item .desc { flex: 1; color: #333; }
+  .analytics-expense-item .date { color: #999; margin-right: 12px; min-width: 100px; }
+  .analytics-expense-item .amt { font-weight: 600; min-width: 80px; text-align: right; }
+  .outlier-badge { background: #fef2f2; color: #dc2626; font-size: 0.7rem; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
+  .bar-container { height: 6px; background: #e5e5e5; border-radius: 3px; flex: 0 0 100px; margin-left: 12px; }
+  .bar-fill { height: 100%; background: #4f46e5; border-radius: 3px; }
 </style>
 </head>
 <body>
@@ -103,6 +138,7 @@
 <div class="tabs">
   <button class="tab active" id="tabTrends">Trends</button>
   <button class="tab" id="tabCategories">Categories</button>
+  <button class="tab" id="tabAnalytics">Analytics</button>
 </div>
 <div class="controls" id="trendsControls">
   <div class="control-group">
@@ -168,6 +204,29 @@
     <tbody id="categoryTableBody"></tbody>
   </table>
 </div>
+<div class="controls" id="analyticsControls" style="display: none;">
+  <div class="control-group">
+    <label>Currency</label>
+    <select id="analyticsCurrency">
+      <option value="RUB">RUB</option>
+      <option value="EUR">EUR</option>
+      <option value="USD">USD</option>
+      <option value="RSD">RSD</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>From</label>
+    <input type="month" id="analyticsFrom">
+  </div>
+  <div class="control-group">
+    <label>To</label>
+    <input type="month" id="analyticsTo">
+  </div>
+</div>
+<div class="chart-container" id="analyticsContainer" style="display: none;">
+  <div class="loading" id="analyticsLoading">Loading...</div>
+  <div id="analyticsContent"></div>
+</div>
 <div class="expenses-panel" id="expensesPanel">
   <button class="expenses-close" id="expensesClose">&times;</button>
   <h2 id="expensesTitle">Expenses</h2>
@@ -207,10 +266,18 @@
   const viewCompareBtn = document.getElementById('viewCompare');
   const tabTrends     = document.getElementById('tabTrends');
   const tabCategories = document.getElementById('tabCategories');
+  const tabAnalytics  = document.getElementById('tabAnalytics');
   const trendsControls = document.getElementById('trendsControls');
   const categoriesControls = document.getElementById('categoriesControls');
+  const analyticsControls = document.getElementById('analyticsControls');
   const trendsContainer = document.getElementById('trendsContainer');
   const categoriesContainer = document.getElementById('categoriesContainer');
+  const analyticsContainer = document.getElementById('analyticsContainer');
+  const analyticsLoading = document.getElementById('analyticsLoading');
+  const analyticsContent = document.getElementById('analyticsContent');
+  const analyticsCurrencyEl = document.getElementById('analyticsCurrency');
+  const analyticsFromEl = document.getElementById('analyticsFrom');
+  const analyticsToEl = document.getElementById('analyticsTo');
   const categoryTableBody = document.getElementById('categoryTableBody');
 
   let chart = null;
@@ -231,6 +298,8 @@
   monthFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
   monthToEl.value   = today.toISOString().slice(0, 7);
   monthSelectEl.value = today.toISOString().slice(0, 7);
+  analyticsFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
+  analyticsToEl.value = today.toISOString().slice(0, 7);
 
   function monthToFrom(val) { return val + '-01'; }
   function monthToTo(val) {
@@ -329,25 +398,22 @@
   });
 
   // --- Tab switching ---
-  tabTrends.addEventListener('click', () => {
-    tabTrends.classList.add('active');
-    tabCategories.classList.remove('active');
-    trendsControls.style.display = 'flex';
-    categoriesControls.style.display = 'none';
-    trendsContainer.style.display = 'block';
-    categoriesContainer.style.display = 'none';
-    fetchData();
-  });
+  function switchTab(activeTab) {
+    const tabs = [tabTrends, tabCategories, tabAnalytics];
+    tabs.forEach(t => t.classList.remove('active'));
+    activeTab.classList.add('active');
 
-  tabCategories.addEventListener('click', () => {
-    tabCategories.classList.add('active');
-    tabTrends.classList.remove('active');
-    trendsControls.style.display = 'none';
-    categoriesControls.style.display = 'flex';
-    trendsContainer.style.display = 'none';
-    categoriesContainer.style.display = 'block';
-    fetchMonthlyCategories();
-  });
+    trendsControls.style.display = activeTab === tabTrends ? 'flex' : 'none';
+    categoriesControls.style.display = activeTab === tabCategories ? 'flex' : 'none';
+    analyticsControls.style.display = activeTab === tabAnalytics ? 'flex' : 'none';
+    trendsContainer.style.display = activeTab === tabTrends ? 'block' : 'none';
+    categoriesContainer.style.display = activeTab === tabCategories ? 'block' : 'none';
+    analyticsContainer.style.display = activeTab === tabAnalytics ? 'block' : 'none';
+  }
+
+  tabTrends.addEventListener('click', () => { switchTab(tabTrends); fetchData(); });
+  tabCategories.addEventListener('click', () => { switchTab(tabCategories); fetchMonthlyCategories(); });
+  tabAnalytics.addEventListener('click', () => { switchTab(tabAnalytics); fetchAnalytics(); });
 
   // Load categories
   fetch('/api/categories')
@@ -750,6 +816,120 @@
   });
 
   monthSelectEl.addEventListener('change', fetchMonthlyCategories);
+
+  [analyticsCurrencyEl, analyticsFromEl, analyticsToEl].forEach(el => {
+    el.addEventListener('change', fetchAnalytics);
+  });
+
+  // --- Analytics ---
+  function fetchAnalytics() {
+    const from = analyticsFromEl.value;
+    const to = analyticsToEl.value;
+    if (!from || !to) return;
+
+    analyticsLoading.style.display = 'block';
+    analyticsContent.innerHTML = '';
+
+    const params = new URLSearchParams({
+      from: monthToFrom(from),
+      to: monthToTo(to),
+      currency: analyticsCurrencyEl.value,
+    });
+
+    fetch('/api/analytics?' + params)
+      .then(r => r.json())
+      .then(data => {
+        analyticsLoading.style.display = 'none';
+        if (data.error) { analyticsContent.innerHTML = '<p style="color:#c00">' + data.error + '</p>'; return; }
+        renderAnalytics(data);
+      })
+      .catch(err => {
+        analyticsLoading.style.display = 'none';
+        analyticsContent.innerHTML = '<p style="color:#c00">Error loading analytics</p>';
+        console.error(err);
+      });
+  }
+
+  function fmt(n) { return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+
+  function renderAnalytics(data) {
+    const cur = data.currency;
+    const maxTotal = data.categories.length ? Math.max(...data.categories.map(c => c.total)) : 1;
+
+    let html = '<div class="analytics-summary">';
+    html += '<div class="summary-card"><div class="label">Period</div><div class="value">' + data.months_count + ' months</div></div>';
+    html += '<div class="summary-card"><div class="label">Total Spent</div><div class="value">' + fmt(data.overall_total) + ' ' + cur + '</div></div>';
+    html += '<div class="summary-card"><div class="label">Avg / Month</div><div class="value">' + fmt(data.overall_avg_monthly) + ' ' + cur + '</div></div>';
+    html += '<div class="summary-card"><div class="label">Categories</div><div class="value">' + data.categories.length + '</div></div>';
+    html += '</div>';
+
+    data.categories.forEach((cat, idx) => {
+      const pct = maxTotal > 0 ? (cat.total / maxTotal * 100) : 0;
+      const hasOutliers = cat.outliers && cat.outliers.length > 0;
+
+      html += '<div class="analytics-category">';
+      html += '<div class="analytics-category-header" data-idx="' + idx + '">';
+      html += '<div style="display:flex;align-items:center;gap:12px;flex:1">';
+      html += '<span class="cat-name">' + cat.category + '</span>';
+      if (hasOutliers) html += '<span class="outlier-badge">' + cat.outliers.length + ' outlier' + (cat.outliers.length > 1 ? 's' : '') + '</span>';
+      html += '<div class="bar-container"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
+      html += '</div>';
+      html += '<div class="cat-stats">';
+      html += '<span class="cat-total">' + fmt(cat.total) + ' ' + cur + '</span>';
+      html += '<span>' + fmt(cat.avg_monthly) + '/mo</span>';
+      html += '<span>' + cat.expense_count + ' txns</span>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '<div class="analytics-category-body" id="analytics-body-' + idx + '">';
+
+      // Stats row
+      html += '<div style="display:flex;gap:24px;margin:14px 0 0;font-size:0.85rem;color:#666">';
+      html += '<span>Avg per expense: <strong>' + fmt(cat.avg_per_expense) + ' ' + cur + '</strong></span>';
+      if (cat.stddev > 0) html += '<span>Std dev: <strong>' + fmt(cat.stddev) + ' ' + cur + '</strong></span>';
+      html += '</div>';
+
+      // Top expenses
+      if (cat.top_expenses && cat.top_expenses.length) {
+        html += '<div class="analytics-section-title">Biggest Expenses</div>';
+        html += '<div class="analytics-expense-list">';
+        cat.top_expenses.forEach(e => {
+          html += '<div class="analytics-expense-item">';
+          html += '<span class="date">' + e.timestamp.slice(0, 10) + '</span>';
+          html += '<span class="desc">' + (e.description || '—') + '</span>';
+          html += '<span class="amt">' + fmt(e.amount) + ' ' + cur + '</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      // Outliers
+      if (hasOutliers) {
+        html += '<div class="analytics-section-title">Outliers (> 2 std dev above avg)</div>';
+        html += '<div class="analytics-expense-list">';
+        cat.outliers.forEach(e => {
+          html += '<div class="analytics-expense-item">';
+          html += '<span class="date">' + e.timestamp.slice(0, 10) + '</span>';
+          html += '<span class="desc">' + (e.description || '—') + '</span>';
+          html += '<span class="amt" style="color:#dc2626">' + fmt(e.amount) + ' ' + cur + '</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+
+      html += '</div></div>';
+    });
+
+    analyticsContent.innerHTML = html;
+
+    // Toggle expand/collapse
+    analyticsContent.querySelectorAll('.analytics-category-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const body = document.getElementById('analytics-body-' + header.dataset.idx);
+        body.classList.toggle('open');
+      });
+    });
+  }
 })();
 </script>
 </body>
