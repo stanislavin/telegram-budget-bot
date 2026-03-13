@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY .git .git
 COPY bot.py prompt.txt ./
 COPY util/ util/
+COPY web/ web/
 
 # The container expects these env vars at runtime:
 #   TELEGRAM_BOT_TOKEN
