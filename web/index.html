@@ -381,6 +381,22 @@
     <label>Month</label>
     <input type="month" id="editExpensesMonth">
   </div>
+  <div class="control-group">
+    <label>Category</label>
+    <select id="editExpensesCatFilter">
+      <option value="">All categories</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Type</label>
+    <select id="editExpensesTypeFilter">
+      <option value="">All types</option>
+      <option value="need">Need</option>
+      <option value="want">Want</option>
+      <option value="invest">Invest</option>
+      <option value="unset">Unset</option>
+    </select>
+  </div>
 </div>
 <div class="chart-container" id="editExpensesContainer" style="display: none;">
   <div class="loading" id="editExpensesLoading">Loading...</div>
@@ -444,6 +460,8 @@
   const editExpensesMonthEl = document.getElementById('editExpensesMonth');
   const editExpensesLoading = document.getElementById('editExpensesLoading');
   const editExpensesContent = document.getElementById('editExpensesContent');
+  const editExpensesCatFilter = document.getElementById('editExpensesCatFilter');
+  const editExpensesTypeFilter = document.getElementById('editExpensesTypeFilter');
   const analyticsLoading = document.getElementById('analyticsLoading');
   const analyticsContent = document.getElementById('analyticsContent');
   const analyticsCurrencyEl = document.getElementById('analyticsCurrency');
@@ -1003,6 +1021,8 @@
 
   budgetMonthEl.addEventListener('change', fetchBudget);
   editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
+  editExpensesCatFilter.addEventListener('change', renderFilteredExpenses);
+  editExpensesTypeFilter.addEventListener('change', renderFilteredExpenses);
 
   // Spending type filter toggles
   document.querySelectorAll('#spendingTypeFilter button').forEach(btn => {
@@ -1473,6 +1493,8 @@
       });
   }
   // --- Edit Expenses ---
+  let allEditExpenses = [];
+
   function fetchEditExpenses() {
     const month = editExpensesMonthEl.value;
     if (!month) return;
@@ -1485,7 +1507,17 @@
       .then(data => {
         editExpensesLoading.style.display = 'none';
         if (data.error) { editExpensesContent.innerHTML = '<p style="color:#c00">' + data.error + '</p>'; return; }
-        renderEditExpenses(data);
+        allEditExpenses = data;
+        // Populate category filter
+        const cats = [...new Set(data.map(e => e.category))].sort();
+        editExpensesCatFilter.innerHTML = '<option value="">All categories</option>';
+        cats.forEach(cat => {
+          const opt = document.createElement('option');
+          opt.value = cat;
+          opt.textContent = cat;
+          editExpensesCatFilter.appendChild(opt);
+        });
+        renderFilteredExpenses();
       })
       .catch(err => {
         editExpensesLoading.style.display = 'none';
@@ -1494,9 +1526,19 @@
       });
   }
 
+  function renderFilteredExpenses() {
+    const catFilter = editExpensesCatFilter.value;
+    const typeFilter = editExpensesTypeFilter.value;
+    let filtered = allEditExpenses;
+    if (catFilter) filtered = filtered.filter(e => e.category === catFilter);
+    if (typeFilter === 'unset') filtered = filtered.filter(e => !e.spending_type);
+    else if (typeFilter) filtered = filtered.filter(e => e.spending_type === typeFilter);
+    renderEditExpenses(filtered);
+  }
+
   function renderEditExpenses(data) {
     if (!data.length) {
-      editExpensesContent.innerHTML = '<p style="color:#999;padding:20px 0">No expenses for this month</p>';
+      editExpensesContent.innerHTML = '<p style="color:#999;padding:20px 0">No expenses matching filters</p>';
       return;
     }
 
@@ -1551,6 +1593,8 @@
           .then(r => r.json())
           .then(resp => {
             if (resp.error) { alert('Error: ' + resp.error); return; }
+            const exp = allEditExpenses.find(e => String(e.id) === id);
+            if (exp) exp.category = newCat;
             sel.dataset.orig = newCat;
             sel.classList.remove('changed');
             const ok = document.getElementById('save-ok-' + id);
@@ -1582,6 +1626,8 @@
           .then(r => r.json())
           .then(resp => {
             if (resp.error) { alert('Error: ' + resp.error); return; }
+            const exp = allEditExpenses.find(e => String(e.id) === id);
+            if (exp) exp.spending_type = newType;
             sel.dataset.orig = newType;
             sel.classList.remove('changed');
             const ok = document.getElementById('type-save-ok-' + id);
@@ -1608,6 +1654,7 @@
           .then(r => r.json())
           .then(resp => {
             if (resp.error) { alert('Error: ' + resp.error); return; }
+            allEditExpenses = allEditExpenses.filter(e => String(e.id) !== id);
             if (row) row.remove();
           })
           .catch(err => {
