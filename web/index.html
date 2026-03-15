@@ -85,55 +85,6 @@
   .tab:hover { color: #4f46e5; }
   .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
 
-  /* Category totals table */
-  .category-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  .category-table th { text-align: left; padding: 12px; border-bottom: 2px solid #e5e5e5; color: #666; font-weight: 600; }
-  .category-table td { padding: 12px; border-bottom: 1px solid #f0f0f0; }
-  .category-table tr:hover td { background: #f9f9f9; cursor: pointer; }
-  .category-expand { float: right; color: #4f46e5; cursor: pointer; font-size: 1.2rem; }
-  .category-expand.expanded { transform: rotate(90deg); }
-  .category-details { display: none; margin-top: 10px; background: #f9f9f9; border-radius: 6px; padding: 15px; }
-  .category-details.expanded { display: block; }
-  .category-details-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-  .category-details-table th { text-align: left; padding: 8px; border-bottom: 1px solid #e5e5e5; color: #666; font-weight: 600; }
-  .category-details-table td { padding: 8px; border-bottom: 1px solid #f0f0f0; }
-  .category-total { font-weight: 600; color: #4f46e5; }
-
-  /* Analytics tab */
-  .analytics-summary { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
-  .summary-card {
-    background: #f8f7ff; border-radius: 8px; padding: 16px 20px;
-    flex: 1; min-width: 160px; border: 1px solid #e5e5e5;
-  }
-  .summary-card .label { font-size: 0.75rem; text-transform: uppercase; color: #666; font-weight: 600; margin-bottom: 4px; }
-  .summary-card .value { font-size: 1.4rem; font-weight: 700; color: #4f46e5; }
-  .summary-card .sub { font-size: 0.8rem; color: #999; margin-top: 2px; }
-  .analytics-category { border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
-  .analytics-category-header {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 14px 16px; cursor: pointer; background: #fafafa;
-    transition: background 0.15s;
-  }
-  .analytics-category-header:hover { background: #f0f0ff; }
-  .analytics-category-header .cat-name { font-weight: 600; font-size: 0.95rem; }
-  .analytics-category-header .cat-stats { display: flex; gap: 20px; font-size: 0.85rem; color: #666; }
-  .analytics-category-header .cat-total { font-weight: 600; color: #4f46e5; }
-  .analytics-category-body { display: none; padding: 0 16px 16px; border-top: 1px solid #e5e5e5; }
-  .analytics-category-body.open { display: block; }
-  .analytics-section-title { font-size: 0.8rem; font-weight: 600; color: #666; text-transform: uppercase; margin: 14px 0 8px; }
-  .analytics-expense-list { font-size: 0.85rem; }
-  .analytics-expense-item {
-    display: flex; justify-content: space-between; padding: 6px 0;
-    border-bottom: 1px solid #f0f0f0;
-  }
-  .analytics-expense-item:last-child { border-bottom: none; }
-  .analytics-expense-item .desc { flex: 1; color: #333; }
-  .analytics-expense-item .date { color: #999; margin-right: 12px; min-width: 100px; }
-  .analytics-expense-item .amt { font-weight: 600; min-width: 80px; text-align: right; }
-  .outlier-badge { background: #fef2f2; color: #dc2626; font-size: 0.7rem; font-weight: 600; padding: 2px 6px; border-radius: 4px; margin-left: 8px; }
-  .bar-container { height: 6px; background: #e5e5e5; border-radius: 3px; flex: 0 0 100px; margin-left: 12px; }
-  .bar-fill { height: 100%; background: #4f46e5; border-radius: 3px; }
-
   /* Budget tab */
   .budget-diff-positive { color: #059669; font-weight: 600; }
   .budget-diff-negative { color: #dc2626; font-weight: 600; }
@@ -389,8 +340,6 @@
 <h1>Expense Trends</h1>
 <div class="tabs">
   <button class="tab active" id="tabTrends">Trends</button>
-  <button class="tab" id="tabCategories">Categories</button>
-  <button class="tab" id="tabAnalytics">Analytics</button>
   <button class="tab" id="tabBudget">Budget</button>
   <button class="tab" id="tabExpenses">Expenses</button>
   <button class="tab" id="tabAdmin">Admin</button>
@@ -437,50 +386,9 @@
     <input type="month" id="monthTo">
   </div>
 </div>
-<div class="controls" id="categoriesControls" style="display: none;">
-  <div class="control-group">
-    <label>Month</label>
-    <input type="month" id="monthSelect">
-  </div>
-</div>
 <div class="chart-container" id="trendsContainer">
   <div class="loading" id="loading">Loading...</div>
   <canvas id="chart"></canvas>
-</div>
-<div class="chart-container" id="categoriesContainer" style="display: none;">
-  <div class="loading" id="categoriesLoading">Loading...</div>
-  <table class="category-table" id="categoryTable">
-    <thead>
-      <tr>
-        <th>Category</th>
-        <th>Total</th>
-      </tr>
-    </thead>
-    <tbody id="categoryTableBody"></tbody>
-  </table>
-</div>
-<div class="controls" id="analyticsControls" style="display: none;">
-  <div class="control-group">
-    <label>Currency</label>
-    <select id="analyticsCurrency">
-      <option value="RUB">RUB</option>
-      <option value="EUR">EUR</option>
-      <option value="USD">USD</option>
-      <option value="RSD">RSD</option>
-    </select>
-  </div>
-  <div class="control-group">
-    <label>From</label>
-    <input type="month" id="analyticsFrom">
-  </div>
-  <div class="control-group">
-    <label>To</label>
-    <input type="month" id="analyticsTo">
-  </div>
-</div>
-<div class="chart-container" id="analyticsContainer" style="display: none;">
-  <div class="loading" id="analyticsLoading">Loading...</div>
-  <div id="analyticsContent"></div>
 </div>
 <div class="controls" id="budgetControls" style="display: none;">
   <div class="control-group">
@@ -571,9 +479,7 @@
   const currencyEl    = document.getElementById('currency');
   const monthFromEl   = document.getElementById('monthFrom');
   const monthToEl     = document.getElementById('monthTo');
-  const monthSelectEl = document.getElementById('monthSelect');
   const loadingEl     = document.getElementById('loading');
-  const categoriesLoadingEl = document.getElementById('categoriesLoading');
   const expensesPanel = document.getElementById('expensesPanel');
   const expensesTitle = document.getElementById('expensesTitle');
   const expensesBody  = document.getElementById('expensesBody');
@@ -586,16 +492,10 @@
   const viewSumBtn    = document.getElementById('viewSum');
   const viewCompareBtn = document.getElementById('viewCompare');
   const tabTrends     = document.getElementById('tabTrends');
-  const tabCategories = document.getElementById('tabCategories');
-  const tabAnalytics  = document.getElementById('tabAnalytics');
   const tabBudget     = document.getElementById('tabBudget');
   const tabExpenses   = document.getElementById('tabExpenses');
   const trendsControls = document.getElementById('trendsControls');
-  const categoriesControls = document.getElementById('categoriesControls');
-  const analyticsControls = document.getElementById('analyticsControls');
   const trendsContainer = document.getElementById('trendsContainer');
-  const categoriesContainer = document.getElementById('categoriesContainer');
-  const analyticsContainer = document.getElementById('analyticsContainer');
   const budgetControls = document.getElementById('budgetControls');
   const budgetContainer = document.getElementById('budgetContainer');
   const budgetMonthEl = document.getElementById('budgetMonth');
@@ -612,12 +512,6 @@
   const editExpensesContent = document.getElementById('editExpensesContent');
   const editExpensesCatFilter = document.getElementById('editExpensesCatFilter');
   const editExpensesTypeFilter = document.getElementById('editExpensesTypeFilter');
-  const analyticsLoading = document.getElementById('analyticsLoading');
-  const analyticsContent = document.getElementById('analyticsContent');
-  const analyticsCurrencyEl = document.getElementById('analyticsCurrency');
-  const analyticsFromEl = document.getElementById('analyticsFrom');
-  const analyticsToEl = document.getElementById('analyticsTo');
-  const categoryTableBody = document.getElementById('categoryTableBody');
 
   let chart = null;
   let chartData = [];
@@ -637,9 +531,6 @@
   sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
   monthFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
   monthToEl.value   = today.toISOString().slice(0, 7);
-  monthSelectEl.value = today.toISOString().slice(0, 7);
-  analyticsFromEl.value = sixMonthsAgo.toISOString().slice(0, 7);
-  analyticsToEl.value = today.toISOString().slice(0, 7);
   budgetMonthEl.value = today.toISOString().slice(0, 7);
   editExpensesMonthEl.value = today.toISOString().slice(0, 7);
 
@@ -741,26 +632,20 @@
 
   // --- Tab switching ---
   function switchTab(activeTab) {
-    const tabs = [tabTrends, tabCategories, tabAnalytics, tabBudget, tabExpenses, tabAdmin];
+    const tabs = [tabTrends, tabBudget, tabExpenses, tabAdmin];
     tabs.forEach(t => t.classList.remove('active'));
     activeTab.classList.add('active');
 
     trendsControls.style.display = activeTab === tabTrends ? 'flex' : 'none';
-    categoriesControls.style.display = activeTab === tabCategories ? 'flex' : 'none';
-    analyticsControls.style.display = activeTab === tabAnalytics ? 'flex' : 'none';
     budgetControls.style.display = activeTab === tabBudget ? 'flex' : 'none';
     editExpensesControls.style.display = activeTab === tabExpenses ? 'flex' : 'none';
     trendsContainer.style.display = activeTab === tabTrends ? 'block' : 'none';
-    categoriesContainer.style.display = activeTab === tabCategories ? 'block' : 'none';
-    analyticsContainer.style.display = activeTab === tabAnalytics ? 'block' : 'none';
     budgetContainer.style.display = activeTab === tabBudget ? 'block' : 'none';
     editExpensesContainer.style.display = activeTab === tabExpenses ? 'block' : 'none';
     adminContainer.style.display = activeTab === tabAdmin ? 'block' : 'none';
   }
 
   tabTrends.addEventListener('click', () => { switchTab(tabTrends); fetchData(); });
-  tabCategories.addEventListener('click', () => { switchTab(tabCategories); fetchMonthlyCategories(); });
-  tabAnalytics.addEventListener('click', () => { switchTab(tabAnalytics); fetchAnalytics(); });
   tabBudget.addEventListener('click', () => { switchTab(tabBudget); fetchBudget(); });
   tabExpenses.addEventListener('click', () => { switchTab(tabExpenses); fetchEditExpenses(); });
   tabAdmin.addEventListener('click', () => { switchTab(tabAdmin); fetchLLMSettings(); });
@@ -776,98 +661,6 @@
       fetchData();
     })
     .catch(err => console.error('Failed to load categories:', err));
-
-  // Load monthly categories
-  function fetchMonthlyCategories() {
-    const month = monthSelectEl.value;
-    if (!month) return;
-
-    categoriesLoadingEl.style.display = 'block';
-    categoryTableBody.innerHTML = '<tr><td colspan="2" style="text-align:center;color:#999">Loading...</td></tr>';
-
-    fetch('/api/monthly-categories?month=' + month)
-      .then(r => r.json())
-      .then(data => {
-        categoriesLoadingEl.style.display = 'none';
-        if (data.error) {
-          categoryTableBody.innerHTML = '<tr><td colspan="2">' + data.error + '</td></tr>';
-          return;
-        }
-        renderCategoryTable(data, month);
-      })
-      .catch(err => {
-        categoriesLoadingEl.style.display = 'none';
-        categoryTableBody.innerHTML = '<tr><td colspan="2">Error loading categories</td></tr>';
-        console.error(err);
-      });
-  }
-
-  function renderCategoryTable(data, month) {
-    categoryTableBody.innerHTML = '';
-    data.forEach((item, index) => {
-      const row = document.createElement('tr');
-      row.innerHTML = `
-        <td>
-          <span class="category-expand" data-index="${index}">&#9654;</span>
-          ${item.category}
-        </td>
-        <td class="category-total">${item.total.toFixed(2)}</td>
-      `;
-      row.addEventListener('click', () => {
-        const expandIcon = row.querySelector('.category-expand');
-        const detailsDiv = row.nextElementSibling.querySelector('.category-details');
-        expandIcon.classList.toggle('expanded');
-        detailsDiv.classList.toggle('expanded');
-      });
-      categoryTableBody.appendChild(row);
-
-      const detailsRow = document.createElement('tr');
-      detailsRow.innerHTML = `
-        <td colspan="2" style="padding: 0;">
-          <div class="category-details" data-category="${item.category}">
-            <table class="category-details-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Amount</th>
-                  <th>Description</th>
-                </tr>
-              </thead>
-              <tbody id="details-${index}"></tbody>
-            </table>
-          </div>
-        </td>
-      `;
-      categoryTableBody.appendChild(detailsRow);
-
-      // Fetch and render category expenses
-      fetch('/api/category-expenses?month=' + month + '&category=' + encodeURIComponent(item.category))
-        .then(r => r.json())
-        .then(expenses => {
-          const detailsBody = document.getElementById('details-' + index);
-          if (expenses.error) {
-            detailsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999">No expenses</td></tr>';
-            return;
-          }
-          if (!expenses.length) {
-            detailsBody.innerHTML = '<tr><td colspan="3" style="text-align:center;color:#999">No expenses</td></tr>';
-            return;
-          }
-          detailsBody.innerHTML = expenses.map(e =>
-            '<tr>' +
-            '<td>' + e.timestamp + '</td>' +
-            '<td>' + e.amount.toFixed(2) + ' ' + e.currency + '</td>' +
-            '<td>' + (e.description || '') + '</td>' +
-            '</tr>'
-          ).join('');
-        })
-        .catch(err => {
-          const detailsBody = document.getElementById('details-' + index);
-          detailsBody.innerHTML = '<tr><td colspan="3">Error loading expenses</td></tr>';
-          console.error(err);
-        });
-    });
-  }
 
   function getSelectedCategoriesParam() {
     if (selectedCategories.size === allCategories.length) return ''; // all selected = no filter
@@ -1165,12 +958,6 @@
     el.addEventListener('change', fetchData);
   });
 
-  monthSelectEl.addEventListener('change', fetchMonthlyCategories);
-
-  [analyticsCurrencyEl, analyticsFromEl, analyticsToEl].forEach(el => {
-    el.addEventListener('change', fetchAnalytics);
-  });
-
   budgetMonthEl.addEventListener('change', fetchBudget);
   editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
   editExpensesCatFilter.addEventListener('change', renderFilteredExpenses);
@@ -1191,115 +978,6 @@
     });
   });
 
-  // --- Analytics ---
-  function fetchAnalytics() {
-    const from = analyticsFromEl.value;
-    const to = analyticsToEl.value;
-    if (!from || !to) return;
-
-    analyticsLoading.style.display = 'block';
-    analyticsContent.innerHTML = '';
-
-    const params = new URLSearchParams({
-      from: monthToFrom(from),
-      to: monthToTo(to),
-      currency: analyticsCurrencyEl.value,
-    });
-
-    fetch('/api/analytics?' + params)
-      .then(r => r.json())
-      .then(data => {
-        analyticsLoading.style.display = 'none';
-        if (data.error) { analyticsContent.innerHTML = '<p style="color:#c00">' + data.error + '</p>'; return; }
-        renderAnalytics(data);
-      })
-      .catch(err => {
-        analyticsLoading.style.display = 'none';
-        analyticsContent.innerHTML = '<p style="color:#c00">Error loading analytics</p>';
-        console.error(err);
-      });
-  }
-
-  function fmt(n) { return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }
-
-  function renderAnalytics(data) {
-    const cur = data.currency;
-    const maxTotal = data.categories.length ? Math.max(...data.categories.map(c => c.total)) : 1;
-
-    let html = '<div class="analytics-summary">';
-    html += '<div class="summary-card"><div class="label">Period</div><div class="value">' + data.months_count + ' months</div></div>';
-    html += '<div class="summary-card"><div class="label">Total Spent</div><div class="value">' + fmt(data.overall_total) + ' ' + cur + '</div></div>';
-    html += '<div class="summary-card"><div class="label">Avg / Month</div><div class="value">' + fmt(data.overall_avg_monthly) + ' ' + cur + '</div></div>';
-    html += '<div class="summary-card"><div class="label">Categories</div><div class="value">' + data.categories.length + '</div></div>';
-    html += '</div>';
-
-    data.categories.forEach((cat, idx) => {
-      const pct = maxTotal > 0 ? (cat.total / maxTotal * 100) : 0;
-      const hasOutliers = cat.outliers && cat.outliers.length > 0;
-
-      html += '<div class="analytics-category">';
-      html += '<div class="analytics-category-header" data-idx="' + idx + '">';
-      html += '<div style="display:flex;align-items:center;gap:12px;flex:1">';
-      html += '<span class="cat-name">' + cat.category + '</span>';
-      if (hasOutliers) html += '<span class="outlier-badge">' + cat.outliers.length + ' outlier' + (cat.outliers.length > 1 ? 's' : '') + '</span>';
-      html += '<div class="bar-container"><div class="bar-fill" style="width:' + pct + '%"></div></div>';
-      html += '</div>';
-      html += '<div class="cat-stats">';
-      html += '<span class="cat-total">' + fmt(cat.total) + ' ' + cur + '</span>';
-      html += '<span>' + fmt(cat.avg_monthly) + '/mo</span>';
-      html += '<span>' + cat.expense_count + ' txns</span>';
-      html += '</div>';
-      html += '</div>';
-
-      html += '<div class="analytics-category-body" id="analytics-body-' + idx + '">';
-
-      // Stats row
-      html += '<div style="display:flex;gap:24px;margin:14px 0 0;font-size:0.85rem;color:#666">';
-      html += '<span>Avg per expense: <strong>' + fmt(cat.avg_per_expense) + ' ' + cur + '</strong></span>';
-      if (cat.stddev > 0) html += '<span>Std dev: <strong>' + fmt(cat.stddev) + ' ' + cur + '</strong></span>';
-      html += '</div>';
-
-      // Top expenses
-      if (cat.top_expenses && cat.top_expenses.length) {
-        html += '<div class="analytics-section-title">Biggest Expenses</div>';
-        html += '<div class="analytics-expense-list">';
-        cat.top_expenses.forEach(e => {
-          html += '<div class="analytics-expense-item">';
-          html += '<span class="date">' + e.timestamp.slice(0, 10) + '</span>';
-          html += '<span class="desc">' + (e.description || '—') + '</span>';
-          html += '<span class="amt">' + fmt(e.amount) + ' ' + cur + '</span>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-
-      // Outliers
-      if (hasOutliers) {
-        html += '<div class="analytics-section-title">Outliers (> 2 std dev above avg)</div>';
-        html += '<div class="analytics-expense-list">';
-        cat.outliers.forEach(e => {
-          html += '<div class="analytics-expense-item">';
-          html += '<span class="date">' + e.timestamp.slice(0, 10) + '</span>';
-          html += '<span class="desc">' + (e.description || '—') + '</span>';
-          html += '<span class="amt" style="color:#dc2626">' + fmt(e.amount) + ' ' + cur + '</span>';
-          html += '</div>';
-        });
-        html += '</div>';
-      }
-
-      html += '</div></div>';
-    });
-
-    analyticsContent.innerHTML = html;
-
-    // Toggle expand/collapse
-    analyticsContent.querySelectorAll('.analytics-category-header').forEach(header => {
-      header.addEventListener('click', () => {
-        const body = document.getElementById('analytics-body-' + header.dataset.idx);
-        body.classList.toggle('open');
-      });
-    });
-  }
   // --- Budget ---
   let budgetData = null;
   let budgetOpenCats = new Set(); // track which categories are expanded
