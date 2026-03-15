@@ -26,6 +26,10 @@ def build_app():
     def index():
         return send_from_directory(_WEB_DIR, 'index.html')
 
+    @flask_app.route('/favicon.svg')
+    def favicon():
+        return send_from_directory(_WEB_DIR, 'favicon.svg', mimetype='image/svg+xml')
+
     @flask_app.route('/health')
     def health_check():
         return 'OK', 200
