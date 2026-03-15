@@ -10,6 +10,7 @@ from util.config import (
     LOCAL_LLM_URL,
     LOCAL_LLM_MODEL,
     LOCAL_LLM_TIMEOUT,
+    DATABASE_URL,
     get_llm_prompt
 )
 from util.retry_handler import with_retry
@@ -34,7 +35,7 @@ def _call_chat_completion(url, headers, model, messages, timeout=30):
 
 
 def _build_provider_chain():
-    """Build ordered list of (url, headers, model, timeout) to try."""
+    """Build ordered list of (url, headers, model, timeout) from env vars (static fallback)."""
     chain = []
 
     # Preferred: local LLM on tailnet (no auth needed)
@@ -56,6 +57,33 @@ def _build_provider_chain():
         chain.append((OPENROUTER_URL, openrouter_headers, model, 30))
 
     return chain
+
+
+async def _build_provider_chain_dynamic():
+    """Build provider chain from DB settings with env var overrides.
+
+    Falls back to static _build_provider_chain() if DB is unavailable.
+    """
+    if not DATABASE_URL:
+        return _build_provider_chain()
+
+    try:
+        from util.postgres import get_pool
+        from util.llm_settings import (
+            get_enabled_settings,
+            apply_env_overrides,
+            build_provider_chain_from_settings,
+        )
+        pool = await get_pool()
+        settings = await get_enabled_settings(pool)
+        settings = apply_env_overrides(settings)
+        chain = build_provider_chain_from_settings(settings)
+        if chain:
+            return chain
+    except Exception as e:
+        logger.warning(f"Failed to load LLM settings from DB, using static config: {e}")
+
+    return _build_provider_chain()
 
 
 def _parse_openrouter_response(formatted_text: str):
@@ -96,8 +124,10 @@ async def process_with_openrouter(message: str) -> tuple:
     prompt = get_llm_prompt() + "\n\nDescription of expense is: " + message
     messages = [{"role": "user", "content": prompt}]
 
+    chain = await _build_provider_chain_dynamic()
+
     last_error = None
-    for url, headers, model, timeout in _build_provider_chain():
+    for url, headers, model, timeout in chain:
         try:
             logger.info(f"Attempting to process with model: {model}")
             content, used_model = await asyncio.to_thread(

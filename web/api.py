@@ -7,8 +7,16 @@ import asyncpg
 from flask import Blueprint, jsonify, request
 
 from util.config import DATABASE_URL
-from util.openrouter import _call_chat_completion, _build_provider_chain
+from util.openrouter import _call_chat_completion, _build_provider_chain, _build_provider_chain_dynamic
 from util.postgres import _clean_dsn
+from util.llm_settings import (
+    _ensure_table as _ensure_llm_table,
+    get_all_settings,
+    upsert_setting,
+    delete_setting,
+    apply_env_overrides,
+    build_provider_chain_from_settings,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -891,7 +899,8 @@ def analyze_expenses():
         ]
 
         last_error = None
-        for url, headers, model, timeout in _build_provider_chain():
+        chain = _run(_build_provider_chain_dynamic())
+        for url, headers, model, timeout in chain:
             try:
                 result, used_model = _call_chat_completion(
                     url, headers, model, messages, timeout=max(timeout, 60)
@@ -905,4 +914,95 @@ def analyze_expenses():
         raise last_error or RuntimeError("All models failed")
     except Exception as e:
         logger.error(f"Error analyzing expenses: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------- LLM Settings endpoints ----------
+
+@api_bp.route("/api/llm-settings")
+def get_llm_settings():
+    """Return all LLM provider settings (DB values with env overrides noted)."""
+    try:
+        pool = _run(_get_web_pool())
+        settings = _run(get_all_settings(pool))
+
+        # Mark which fields are overridden by env vars
+        import os
+        env_overrides = {}
+        if os.getenv("LOCAL_LLM_URL"):
+            env_overrides["local.primary.url"] = os.getenv("LOCAL_LLM_URL")
+        if os.getenv("LOCAL_LLM_MODEL"):
+            env_overrides["local.primary.model"] = os.getenv("LOCAL_LLM_MODEL")
+        if os.getenv("LOCAL_LLM_TIMEOUT"):
+            env_overrides["local.primary.timeout"] = os.getenv("LOCAL_LLM_TIMEOUT")
+        if os.getenv("OPENROUTER_API_KEY"):
+            env_overrides["openrouter.*.api_key"] = "***"
+        if os.getenv("OPENROUTER_LLM_VERSION"):
+            env_overrides["openrouter.primary.model"] = os.getenv("OPENROUTER_LLM_VERSION")
+        if os.getenv("OPENROUTER_URL"):
+            env_overrides["openrouter.*.url"] = os.getenv("OPENROUTER_URL")
+        if os.getenv("OPENROUTER_FALLBACK_MODELS"):
+            env_overrides["openrouter.fallbacks"] = os.getenv("OPENROUTER_FALLBACK_MODELS")
+
+        # Apply overrides to get effective values
+        effective = apply_env_overrides([dict(s) for s in settings])
+        effective_chain = build_provider_chain_from_settings(effective)
+
+        return jsonify({
+            "settings": settings,
+            "env_overrides": env_overrides,
+            "effective_chain": [
+                {"url": url, "model": model, "timeout": timeout}
+                for url, _headers, model, timeout in effective_chain
+            ],
+        })
+    except Exception as e:
+        logger.error(f"Error fetching LLM settings: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/llm-settings", methods=["POST"])
+def save_llm_setting():
+    """Create or update an LLM provider setting."""
+    try:
+        body = request.get_json()
+        if not body:
+            return jsonify({"error": "JSON body required"}), 400
+
+        provider = (body.get("provider") or "").strip()
+        name = (body.get("name") or "").strip()
+        model = (body.get("model") or "").strip()
+        url = (body.get("url") or "").strip()
+
+        if not all([provider, name, model, url]):
+            return jsonify({"error": "provider, name, model, and url are required"}), 400
+
+        api_key = body.get("api_key")
+        timeout = int(body.get("timeout", 30))
+        priority = int(body.get("priority", 0))
+        enabled = body.get("enabled", True)
+
+        pool = _run(_get_web_pool())
+        _run(upsert_setting(
+            pool, provider, name, model, url,
+            api_key=api_key, timeout=timeout, priority=priority, enabled=enabled,
+        ))
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error saving LLM setting: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/llm-settings/<int:setting_id>", methods=["DELETE"])
+def delete_llm_setting(setting_id):
+    """Delete an LLM provider setting."""
+    try:
+        pool = _run(_get_web_pool())
+        deleted = _run(delete_setting(pool, setting_id))
+        if not deleted:
+            return jsonify({"error": "setting not found"}), 404
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error deleting LLM setting: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
