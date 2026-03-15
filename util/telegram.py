@@ -364,7 +364,7 @@ def _expenses_filter_keyboard(active_type: str = None, active_category: str = No
 
     # Type filter row
     type_buttons = []
-    for label, value in [("All", "all"), ("Needs", "need"), ("Wants", "want"), ("Invest", "invest")]:
+    for label, value in [("All", "all"), ("Needs", "need"), ("Wants", "want"), ("Invest", "invest"), ("Wellbeing", "wellbeing")]:
         prefix = ">> " if (value == "all" and not active_type and not active_category) or active_type == value else ""
         type_buttons.append(
             InlineKeyboardButton(

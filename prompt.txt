@@ -29,8 +29,9 @@ Your task is to:
 
 6. Classify the expense into one of the following spending types:
    - need: essential living expenses (rent, groceries, utilities, health, insurance, transport to work, essentials, bills)
-   - want: discretionary spending (eating out, entertainment, toys, presents, subscriptions, sports, whatever, deliveries)
+   - want: discretionary spending (eating out, entertainment, toys, presents, subscriptions, whatever, deliveries)
    - invest: investments in future value (education, courses, savings, work tools)
+   - wellbeing: physical and mental wellness (sports, gym, spa, massage, meditation, therapy, self-care)
 
 Output the response in this exact format:
 expense,currency,category,spending_type,original description without the expense amount and currency
@@ -40,7 +41,7 @@ Rules:
 - Strictly follow the field order: expense, currency, category, spending_type, description
 - Exclude the expense amount, currency and category from the "original description" field
 - If the category is unclear, use "extra" and ensure the output still follows the format
-- spending_type must be one of: need, want, invest
+- spending_type must be one of: need, want, invest, wellbeing
 - Do not include any additional information in the output
 - Follow the format exactly as shown in the examples below
 

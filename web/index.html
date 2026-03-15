@@ -288,14 +288,17 @@
   .spending-type-card.need { border-color: #059669; background: #f0fdf4; }
   .spending-type-card.want { border-color: #d97706; background: #fffbeb; }
   .spending-type-card.invest { border-color: #2563eb; background: #eff6ff; }
+  .spending-type-card.wellbeing { border-color: #d946ef; background: #fdf4ff; }
   .spending-type-card .st-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
   .spending-type-card.need .st-label { color: #059669; }
   .spending-type-card.want .st-label { color: #d97706; }
   .spending-type-card.invest .st-label { color: #2563eb; }
+  .spending-type-card.wellbeing .st-label { color: #d946ef; }
   .spending-type-card .st-pct { font-size: 1.4rem; font-weight: 700; }
   .spending-type-card.need .st-pct { color: #059669; }
   .spending-type-card.want .st-pct { color: #d97706; }
   .spending-type-card.invest .st-pct { color: #2563eb; }
+  .spending-type-card.wellbeing .st-pct { color: #d946ef; }
   .spending-type-card .st-amount { font-size: 0.8rem; color: #666; margin-top: 2px; }
 
   /* Spending type filter toggles */
@@ -309,6 +312,7 @@
   .spending-type-filter button.active-need { background: #059669; color: #fff; border-color: #059669; }
   .spending-type-filter button.active-want { background: #d97706; color: #fff; border-color: #d97706; }
   .spending-type-filter button.active-invest { background: #2563eb; color: #fff; border-color: #2563eb; }
+  .spending-type-filter button.active-wellbeing { background: #d946ef; color: #fff; border-color: #d946ef; }
 
   .type-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
   .type-save-ok.show { opacity: 1; }
@@ -489,6 +493,7 @@
       <button data-type="need">Need</button>
       <button data-type="want">Want</button>
       <button data-type="invest">Invest</button>
+      <button data-type="wellbeing">Wellbeing</button>
     </div>
   </div>
 </div>
@@ -514,6 +519,7 @@
       <option value="need">Need</option>
       <option value="want">Want</option>
       <option value="invest">Invest</option>
+      <option value="wellbeing">Wellbeing</option>
       <option value="unset">Unset</option>
     </select>
   </div>
@@ -1353,7 +1359,7 @@
     // Spending type structure cards
     const sts = data.spending_type_summary || {};
     html += '<div class="spending-type-cards">';
-    ['need', 'want', 'invest'].forEach(st => {
+    ['need', 'want', 'invest', 'wellbeing'].forEach(st => {
       const info = sts[st] || { amount: 0, percentage: 0 };
       html += '<div class="spending-type-card ' + st + '">';
       html += '<div class="st-label">' + st.charAt(0).toUpperCase() + st.slice(1) + '</div>';
@@ -1695,7 +1701,7 @@
     });
     const totalStr = Object.entries(totals).map(([cur, amt]) => fmt(Math.round(amt * 100) / 100) + ' ' + cur).join(' + ');
 
-    const spendingTypes = ['need', 'want', 'invest'];
+    const spendingTypes = ['need', 'want', 'invest', 'wellbeing'];
 
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:0.9rem">';
     html += '<span style="color:#666">' + data.length + ' expense' + (data.length !== 1 ? 's' : '') + '</span>';
