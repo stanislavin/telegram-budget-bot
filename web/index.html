@@ -978,6 +978,8 @@
     });
   });
 
+  function fmt(n) { return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+
   // --- Budget ---
   let budgetData = null;
   let budgetOpenCats = new Set(); // track which categories are expanded
