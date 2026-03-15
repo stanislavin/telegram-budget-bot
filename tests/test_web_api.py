@@ -9,15 +9,17 @@ import pytest
 from util.health import build_app
 
 
-def _fake_run_with_chain(coro, chain):
+def _fake_run_with_chain(coro, chain, mock_pool=None):
     """Helper for analyze tests: returns chain for _build_provider_chain_dynamic,
-    delegates everything else to a no-op."""
+    mock_pool for _get_web_pool, delegates everything else to a no-op."""
     import asyncio
     coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
     if asyncio.iscoroutine(coro):
         coro.close()
     if '_build_provider_chain_dynamic' in coro_name:
         return chain
+    if '_get_web_pool' in coro_name:
+        return mock_pool
     return None
 
 

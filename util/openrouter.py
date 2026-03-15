@@ -59,8 +59,12 @@ def _build_provider_chain():
     return chain
 
 
-async def _build_provider_chain_dynamic():
+async def _build_provider_chain_dynamic(pool=None):
     """Build provider chain from DB settings with env var overrides.
+
+    Args:
+        pool: optional asyncpg pool to use (e.g. web API's own pool).
+              If None, uses the bot's pool from util.postgres.
 
     Falls back to static _build_provider_chain() if DB is unavailable.
     """
@@ -68,13 +72,14 @@ async def _build_provider_chain_dynamic():
         return _build_provider_chain()
 
     try:
-        from util.postgres import get_pool
         from util.llm_settings import (
             get_enabled_settings,
             apply_env_overrides,
             build_provider_chain_from_settings,
         )
-        pool = await get_pool()
+        if pool is None:
+            from util.postgres import get_pool
+            pool = await get_pool()
         settings = await get_enabled_settings(pool)
         settings = apply_env_overrides(settings)
         chain = build_provider_chain_from_settings(settings)
