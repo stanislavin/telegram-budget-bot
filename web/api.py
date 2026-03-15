@@ -899,7 +899,8 @@ def analyze_expenses():
         ]
 
         last_error = None
-        chain = _run(_build_provider_chain_dynamic())
+        pool = _run(_get_web_pool())
+        chain = _run(_build_provider_chain_dynamic(pool))
         for url, headers, model, timeout in chain:
             try:
                 result, used_model = _call_chat_completion(
