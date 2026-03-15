@@ -311,6 +311,73 @@
 
   .type-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
   .type-save-ok.show { opacity: 1; }
+
+  /* Admin tab */
+  .admin-section { margin-bottom: 24px; }
+  .admin-section h2 { font-size: 1.1rem; margin-bottom: 12px; }
+  .admin-card {
+    border: 1px solid #e5e5e5; border-radius: 8px; margin-bottom: 10px;
+    overflow: hidden; background: #fff;
+  }
+  .admin-card.disabled { opacity: 0.5; }
+  .admin-card-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; background: #fafafa; border-bottom: 1px solid #e5e5e5;
+  }
+  .admin-card-header .provider-badge {
+    font-size: 0.7rem; font-weight: 600; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 4px; color: #fff;
+  }
+  .admin-card-header .provider-badge.local { background: #059669; }
+  .admin-card-header .provider-badge.openrouter { background: #4f46e5; }
+  .admin-card-header .provider-badge.custom { background: #7c3aed; }
+  .admin-card-header .card-title { font-weight: 600; font-size: 0.95rem; display: flex; align-items: center; gap: 8px; }
+  .admin-card-header .card-actions { display: flex; gap: 8px; align-items: center; }
+  .admin-card-body { padding: 12px 16px; }
+  .admin-field { display: flex; gap: 12px; margin-bottom: 8px; align-items: center; }
+  .admin-field label { font-size: 0.8rem; font-weight: 600; color: #666; min-width: 80px; text-align: right; }
+  .admin-field input, .admin-field select {
+    flex: 1; padding: 6px 10px; border: 1px solid #ddd; border-radius: 4px;
+    font-size: 0.85rem; background: #fff;
+  }
+  .admin-field input:focus, .admin-field select:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
+  .admin-field input[type="number"] { width: 100px; flex: none; }
+  .admin-field input[type="checkbox"] { flex: none; width: auto; }
+  .admin-field .env-override {
+    font-size: 0.75rem; color: #d97706; background: #fffbeb; padding: 2px 6px;
+    border-radius: 3px; white-space: nowrap;
+  }
+  .admin-field input.overridden { border-color: #d97706; background: #fffdf5; }
+  .btn-admin {
+    padding: 6px 16px; border: none; border-radius: 6px; font-size: 0.85rem;
+    cursor: pointer; font-weight: 600; transition: all 0.15s;
+  }
+  .btn-admin-primary { background: #4f46e5; color: #fff; }
+  .btn-admin-primary:hover { background: #4338ca; }
+  .btn-admin-danger { background: #fff; color: #dc2626; border: 1px solid #dc2626; }
+  .btn-admin-danger:hover { background: #fef2f2; }
+  .btn-admin-secondary { background: #e5e5e5; color: #333; }
+  .btn-admin-secondary:hover { background: #d4d4d4; }
+  .admin-status { font-size: 0.85rem; color: #059669; opacity: 0; transition: opacity 0.3s; margin-left: 8px; }
+  .admin-status.show { opacity: 1; }
+  .admin-chain { margin-top: 16px; }
+  .admin-chain h3 { font-size: 0.9rem; margin-bottom: 8px; color: #666; }
+  .chain-item {
+    display: flex; gap: 16px; align-items: center; padding: 8px 12px;
+    border: 1px solid #e5e5e5; border-radius: 6px; margin-bottom: 6px;
+    font-size: 0.85rem; background: #fafafa;
+  }
+  .chain-item .chain-num { font-weight: 700; color: #4f46e5; min-width: 24px; }
+  .chain-item .chain-model { font-weight: 600; flex: 1; }
+  .chain-item .chain-url { color: #999; font-size: 0.8rem; }
+  .chain-item .chain-timeout { color: #666; font-size: 0.8rem; }
+  .admin-add-form {
+    border: 2px dashed #ccc; border-radius: 8px; padding: 16px;
+    margin-top: 12px; display: none;
+  }
+  .admin-add-form.open { display: block; }
+  .admin-add-form h3 { font-size: 0.9rem; margin-bottom: 12px; }
+  .admin-add-actions { display: flex; gap: 8px; margin-top: 12px; }
 </style>
 </head>
 <body>
@@ -321,6 +388,7 @@
   <button class="tab" id="tabAnalytics">Analytics</button>
   <button class="tab" id="tabBudget">Budget</button>
   <button class="tab" id="tabExpenses">Expenses</button>
+  <button class="tab" id="tabAdmin">Admin</button>
 </div>
 <div class="controls" id="trendsControls">
   <div class="control-group">
@@ -469,6 +537,10 @@
   <div class="loading" id="editExpensesLoading">Loading...</div>
   <div id="editExpensesContent"></div>
 </div>
+<div class="chart-container" id="adminContainer" style="display: none;">
+  <div class="loading" id="adminLoading">Loading...</div>
+  <div id="adminContent"></div>
+</div>
 <div class="expenses-panel" id="expensesPanel">
   <button class="expenses-close" id="expensesClose">&times;</button>
   <h2 id="expensesTitle">Expenses</h2>
@@ -524,6 +596,10 @@
   const budgetContent = document.getElementById('budgetContent');
   const editExpensesControls = document.getElementById('editExpensesControls');
   const editExpensesContainer = document.getElementById('editExpensesContainer');
+  const tabAdmin = document.getElementById('tabAdmin');
+  const adminContainer = document.getElementById('adminContainer');
+  const adminLoading = document.getElementById('adminLoading');
+  const adminContent = document.getElementById('adminContent');
   const editExpensesMonthEl = document.getElementById('editExpensesMonth');
   const editExpensesLoading = document.getElementById('editExpensesLoading');
   const editExpensesContent = document.getElementById('editExpensesContent');
@@ -658,7 +734,7 @@
 
   // --- Tab switching ---
   function switchTab(activeTab) {
-    const tabs = [tabTrends, tabCategories, tabAnalytics, tabBudget, tabExpenses];
+    const tabs = [tabTrends, tabCategories, tabAnalytics, tabBudget, tabExpenses, tabAdmin];
     tabs.forEach(t => t.classList.remove('active'));
     activeTab.classList.add('active');
 
@@ -672,6 +748,7 @@
     analyticsContainer.style.display = activeTab === tabAnalytics ? 'block' : 'none';
     budgetContainer.style.display = activeTab === tabBudget ? 'block' : 'none';
     editExpensesContainer.style.display = activeTab === tabExpenses ? 'block' : 'none';
+    adminContainer.style.display = activeTab === tabAdmin ? 'block' : 'none';
   }
 
   tabTrends.addEventListener('click', () => { switchTab(tabTrends); fetchData(); });
@@ -679,6 +756,7 @@
   tabAnalytics.addEventListener('click', () => { switchTab(tabAnalytics); fetchAnalytics(); });
   tabBudget.addEventListener('click', () => { switchTab(tabBudget); fetchBudget(); });
   tabExpenses.addEventListener('click', () => { switchTab(tabExpenses); fetchEditExpenses(); });
+  tabAdmin.addEventListener('click', () => { switchTab(tabAdmin); fetchLLMSettings(); });
 
   // Load categories
   fetch('/api/categories')
@@ -1815,6 +1893,247 @@
         console.error(err);
       });
   });
+  // ---- Admin: LLM Settings ----
+  let llmSettingsData = null;
+
+  function fetchLLMSettings() {
+    adminLoading.style.display = 'block';
+    adminContent.innerHTML = '';
+    fetch('/api/llm-settings')
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        llmSettingsData = data;
+        adminLoading.style.display = 'none';
+        renderLLMSettings(data);
+      })
+      .catch(err => {
+        adminLoading.style.display = 'none';
+        adminContent.innerHTML = '<p style="color:#c00">Error loading LLM settings: ' + err.message + '</p>';
+      });
+  }
+
+  function providerBadgeClass(provider) {
+    if (provider === 'local') return 'local';
+    if (provider === 'openrouter') return 'openrouter';
+    return 'custom';
+  }
+
+  function isOverridden(setting, envOverrides) {
+    const p = setting.provider;
+    const n = setting.name;
+    const overridden = {};
+    if (p === 'local' && n === 'primary') {
+      if (envOverrides['local.primary.url']) overridden.url = envOverrides['local.primary.url'];
+      if (envOverrides['local.primary.model']) overridden.model = envOverrides['local.primary.model'];
+      if (envOverrides['local.primary.timeout']) overridden.timeout = envOverrides['local.primary.timeout'];
+    }
+    if (p === 'openrouter') {
+      if (envOverrides['openrouter.*.api_key']) overridden.api_key = true;
+      if (envOverrides['openrouter.*.url']) overridden.url = envOverrides['openrouter.*.url'];
+      if (n === 'primary' && envOverrides['openrouter.primary.model']) overridden.model = envOverrides['openrouter.primary.model'];
+    }
+    return overridden;
+  }
+
+  function renderLLMSettings(data) {
+    const { settings, env_overrides, effective_chain } = data;
+    let html = '<div class="admin-section"><h2>LLM Provider Settings</h2>';
+
+    // Cards for each setting
+    settings.forEach(s => {
+      const ov = isOverridden(s, env_overrides);
+      const disabledClass = s.enabled ? '' : ' disabled';
+      const badge = providerBadgeClass(s.provider);
+      html += `<div class="admin-card${disabledClass}" data-id="${s.id}">`;
+      html += `<div class="admin-card-header">`;
+      html += `<div class="card-title"><span class="provider-badge ${badge}">${s.provider}</span> ${s.name}</div>`;
+      html += `<div class="card-actions">`;
+      html += `<label style="font-size:0.85rem;cursor:pointer;display:flex;align-items:center;gap:4px;">`;
+      html += `<input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="document.dispatchEvent(new CustomEvent('llm-toggle',{detail:{id:${s.id},enabled:this.checked}}))"> Enabled</label>`;
+      html += `<button class="btn-admin btn-admin-danger" onclick="document.dispatchEvent(new CustomEvent('llm-delete',{detail:{id:${s.id}}}))">Delete</button>`;
+      html += `</div></div>`;
+
+      html += `<div class="admin-card-body">`;
+      html += renderField('Model', 'model', s.model, s.id, ov.model);
+      html += renderField('URL', 'url', s.url, s.id, ov.url);
+      html += renderField('API Key', 'api_key', s.api_key || '', s.id, ov.api_key, 'password');
+      html += renderNumField('Timeout', 'timeout', s.timeout, s.id, ov.timeout);
+      html += renderNumField('Priority', 'priority', s.priority, s.id);
+      html += `<div style="margin-top:8px;text-align:right;">`;
+      html += `<button class="btn-admin btn-admin-primary" onclick="document.dispatchEvent(new CustomEvent('llm-save',{detail:{id:${s.id}}}))">Save</button>`;
+      html += `<span class="admin-status" id="adminStatus${s.id}">Saved</span>`;
+      html += `</div>`;
+      html += `</div></div>`;
+    });
+
+    // Add new button
+    html += `<button class="btn-admin btn-admin-secondary" style="margin-top:8px;" onclick="document.dispatchEvent(new CustomEvent('llm-add-toggle'))">+ Add Provider</button>`;
+
+    // Add form
+    html += `<div class="admin-add-form" id="adminAddForm">`;
+    html += `<h3>Add New Provider</h3>`;
+    html += renderAddField('Provider', 'new_provider', 'e.g. openrouter, local, custom');
+    html += renderAddField('Name', 'new_name', 'e.g. primary, fallback_1');
+    html += renderAddField('Model', 'new_model', 'e.g. meta-llama/llama-3-8b');
+    html += renderAddField('URL', 'new_url', 'e.g. https://openrouter.ai/api/v1/chat/completions');
+    html += renderAddField('API Key', 'new_api_key', 'optional', 'password');
+    html += `<div class="admin-field"><label>Timeout</label><input type="number" id="new_timeout" value="30" min="1"></div>`;
+    html += `<div class="admin-field"><label>Priority</label><input type="number" id="new_priority" value="0" min="0"></div>`;
+    html += `<div class="admin-add-actions">`;
+    html += `<button class="btn-admin btn-admin-primary" onclick="document.dispatchEvent(new CustomEvent('llm-add-save'))">Add</button>`;
+    html += `<button class="btn-admin btn-admin-secondary" onclick="document.dispatchEvent(new CustomEvent('llm-add-toggle'))">Cancel</button>`;
+    html += `</div></div>`;
+
+    html += '</div>';
+
+    // Effective chain
+    html += '<div class="admin-chain"><h3>Effective Provider Chain (with env overrides applied)</h3>';
+    if (effective_chain.length === 0) {
+      html += '<p style="color:#999;font-size:0.85rem;">No providers configured</p>';
+    } else {
+      effective_chain.forEach((c, i) => {
+        html += `<div class="chain-item">`;
+        html += `<span class="chain-num">${i + 1}</span>`;
+        html += `<span class="chain-model">${c.model}</span>`;
+        html += `<span class="chain-url">${c.url}</span>`;
+        html += `<span class="chain-timeout">${c.timeout}s</span>`;
+        html += `</div>`;
+      });
+    }
+
+    // Env overrides info
+    if (Object.keys(env_overrides).length > 0) {
+      html += '<div style="margin-top:16px;padding:12px;background:#fffbeb;border:1px solid #d97706;border-radius:6px;font-size:0.85rem;">';
+      html += '<strong style="color:#d97706;">Active Environment Overrides:</strong><br>';
+      Object.entries(env_overrides).forEach(([key, val]) => {
+        html += `<span style="color:#666;">${key}</span> = <code>${val}</code><br>`;
+      });
+      html += '</div>';
+    }
+
+    html += '</div>';
+    adminContent.innerHTML = html;
+  }
+
+  function renderField(label, field, value, id, override, type) {
+    type = type || 'text';
+    let extra = '';
+    let cls = '';
+    if (override) {
+      cls = ' overridden';
+      extra = `<span class="env-override">env override</span>`;
+    }
+    return `<div class="admin-field"><label>${label}</label><input type="${type}" id="llm_${id}_${field}" value="${escHtml(value)}" class="${cls}"> ${extra}</div>`;
+  }
+
+  function renderNumField(label, field, value, id, override) {
+    let extra = '';
+    let cls = '';
+    if (override) {
+      cls = ' overridden';
+      extra = `<span class="env-override">env override</span>`;
+    }
+    return `<div class="admin-field"><label>${label}</label><input type="number" id="llm_${id}_${field}" value="${value}" min="0" class="${cls}"> ${extra}</div>`;
+  }
+
+  function renderAddField(label, id, placeholder, type) {
+    type = type || 'text';
+    return `<div class="admin-field"><label>${label}</label><input type="${type}" id="${id}" placeholder="${placeholder}"></div>`;
+  }
+
+  function escHtml(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function flashStatus(id) {
+    const el = document.getElementById('adminStatus' + id);
+    if (el) { el.classList.add('show'); setTimeout(() => el.classList.remove('show'), 2000); }
+  }
+
+  // Save a setting
+  document.addEventListener('llm-save', e => {
+    const id = e.detail.id;
+    const s = llmSettingsData.settings.find(s => s.id === id);
+    if (!s) return;
+    const body = {
+      provider: s.provider,
+      name: s.name,
+      model: document.getElementById(`llm_${id}_model`).value,
+      url: document.getElementById(`llm_${id}_url`).value,
+      api_key: document.getElementById(`llm_${id}_api_key`).value || null,
+      timeout: parseInt(document.getElementById(`llm_${id}_timeout`).value) || 30,
+      priority: parseInt(document.getElementById(`llm_${id}_priority`).value) || 0,
+      enabled: s.enabled,
+    };
+    fetch('/api/llm-settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        flashStatus(id);
+        fetchLLMSettings();
+      })
+      .catch(err => alert('Error saving: ' + err.message));
+  });
+
+  // Toggle enabled
+  document.addEventListener('llm-toggle', e => {
+    const { id, enabled } = e.detail;
+    const s = llmSettingsData.settings.find(s => s.id === id);
+    if (!s) return;
+    const body = { ...s, enabled, api_key: s.api_key || null };
+    fetch('/api/llm-settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        fetchLLMSettings();
+      })
+      .catch(err => alert('Error toggling: ' + err.message));
+  });
+
+  // Delete
+  document.addEventListener('llm-delete', e => {
+    if (!confirm('Delete this provider setting?')) return;
+    fetch(`/api/llm-settings/${e.detail.id}`, { method: 'DELETE' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        fetchLLMSettings();
+      })
+      .catch(err => alert('Error deleting: ' + err.message));
+  });
+
+  // Add form toggle
+  document.addEventListener('llm-add-toggle', () => {
+    const form = document.getElementById('adminAddForm');
+    if (form) form.classList.toggle('open');
+  });
+
+  // Add new
+  document.addEventListener('llm-add-save', () => {
+    const body = {
+      provider: document.getElementById('new_provider').value.trim(),
+      name: document.getElementById('new_name').value.trim(),
+      model: document.getElementById('new_model').value.trim(),
+      url: document.getElementById('new_url').value.trim(),
+      api_key: document.getElementById('new_api_key').value.trim() || null,
+      timeout: parseInt(document.getElementById('new_timeout').value) || 30,
+      priority: parseInt(document.getElementById('new_priority').value) || 0,
+      enabled: true,
+    };
+    if (!body.provider || !body.name || !body.model || !body.url) {
+      alert('Provider, name, model, and URL are required');
+      return;
+    }
+    fetch('/api/llm-settings', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body) })
+      .then(r => r.json())
+      .then(data => {
+        if (data.error) throw new Error(data.error);
+        fetchLLMSettings();
+      })
+      .catch(err => alert('Error adding: ' + err.message));
+  });
+
 })();
 </script>
 </body>
