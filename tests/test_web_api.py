@@ -2,11 +2,23 @@
 
 import json
 from datetime import datetime
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from util.health import build_app
+
+
+def _fake_run_with_chain(coro, chain):
+    """Helper for analyze tests: returns chain for _build_provider_chain_dynamic,
+    delegates everything else to a no-op."""
+    import asyncio
+    coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
+    if asyncio.iscoroutine(coro):
+        coro.close()
+    if '_build_provider_chain_dynamic' in coro_name:
+        return chain
+    return None
 
 
 @pytest.fixture
@@ -1046,11 +1058,9 @@ class TestUpdateSpendingType:
 class TestAnalyze:
     def test_success(self, client):
         test_client, _ = client
-        with patch("web.api._build_provider_chain") as mock_chain, \
+        chain = [("http://local/v1/chat/completions", {}, "local-model", 15)]
+        with patch("web.api._run", side_effect=lambda coro: _fake_run_with_chain(coro, chain)), \
              patch("web.api._call_chat_completion") as mock_call:
-            mock_chain.return_value = [
-                ("http://local/v1/chat/completions", {}, "local-model", 15),
-            ]
             mock_call.return_value = ("Here is my analysis.", "local-model")
 
             response = test_client.post(
@@ -1071,12 +1081,12 @@ class TestAnalyze:
 
     def test_fallback_on_first_failure(self, client):
         test_client, _ = client
-        with patch("web.api._build_provider_chain") as mock_chain, \
+        chain = [
+            ("http://local/v1/chat/completions", {}, "local-model", 15),
+            ("https://openrouter.ai/api/v1/chat/completions", {}, "openrouter-model", 30),
+        ]
+        with patch("web.api._run", side_effect=lambda coro: _fake_run_with_chain(coro, chain)), \
              patch("web.api._call_chat_completion") as mock_call:
-            mock_chain.return_value = [
-                ("http://local/v1/chat/completions", {}, "local-model", 15),
-                ("https://openrouter.ai/api/v1/chat/completions", {}, "openrouter-model", 30),
-            ]
             mock_call.side_effect = [
                 ConnectionError("timeout"),
                 ("Fallback analysis.", "openrouter-model"),
@@ -1125,11 +1135,9 @@ class TestAnalyze:
 
     def test_all_providers_fail_returns_500(self, client):
         test_client, _ = client
-        with patch("web.api._build_provider_chain") as mock_chain, \
+        chain = [("http://local/v1/chat/completions", {}, "local-model", 15)]
+        with patch("web.api._run", side_effect=lambda coro: _fake_run_with_chain(coro, chain)), \
              patch("web.api._call_chat_completion") as mock_call:
-            mock_chain.return_value = [
-                ("http://local/v1/chat/completions", {}, "local-model", 15),
-            ]
             mock_call.side_effect = ConnectionError("down")
 
             response = test_client.post(

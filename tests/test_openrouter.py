@@ -9,7 +9,8 @@ from util.config import OPENROUTER_LLM_VERSION, OPENROUTER_FALLBACK_MODELS, OPEN
 def disable_local_llm():
     """Disable local LLM so tests only exercise the OpenRouter path."""
     with patch('util.openrouter.LOCAL_LLM_URL', ''), \
-         patch('util.openrouter.LOCAL_LLM_MODEL', ''):
+         patch('util.openrouter.LOCAL_LLM_MODEL', ''), \
+         patch('util.openrouter.DATABASE_URL', None):
         yield
 
 @pytest.fixture

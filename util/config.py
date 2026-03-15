@@ -36,7 +36,7 @@ LOCAL_LLM_TIMEOUT = int(os.getenv('LOCAL_LLM_TIMEOUT', '15'))
 
 # OpenRouter Configuration (fallback)
 OPENROUTER_API_KEY = os.getenv('OPENROUTER_API_KEY')
-OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'meta-llama/llama-3.3-70b-instruct:free')
+OPENROUTER_LLM_VERSION = os.getenv('OPENROUTER_LLM_VERSION', 'arcee-ai/trinity-mini:free')
 OPENROUTER_FALLBACK_MODELS = os.getenv('OPENROUTER_FALLBACK_MODELS', 'z-ai/glm-4.5-air:free,openrouter/aurora-alpha').split(',')
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
