@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Define supported currencies
 SUPPORTED_CURRENCIES = {'RSD', 'EUR', 'RUB'}
 
-VALID_SPENDING_TYPES = {'need', 'want', 'invest'}
+VALID_SPENDING_TYPES = {'need', 'want', 'invest', 'wellbeing'}
 
 
 def _call_chat_completion(url, headers, model, messages, timeout=30):

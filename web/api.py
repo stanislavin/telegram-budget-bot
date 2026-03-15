@@ -618,7 +618,7 @@ def get_budget():
         # Spending type summary
         st_total = sum(spending_type_totals.values()) if spending_type_totals else 0
         spending_type_summary = {}
-        for st in ("need", "want", "invest"):
+        for st in ("need", "want", "invest", "wellbeing"):
             amount = round(spending_type_totals.get(st, 0), 2)
             pct = round(amount / st_total * 100, 1) if st_total > 0 else 0
             spending_type_summary[st] = {"amount": amount, "percentage": pct}
@@ -786,8 +786,8 @@ def update_expense_spending_type(expense_id):
             return jsonify({"error": "spending_type is required"}), 400
 
         spending_type = body["spending_type"].strip().lower()
-        if spending_type not in ("need", "want", "invest"):
-            return jsonify({"error": "spending_type must be one of: need, want, invest"}), 400
+        if spending_type not in ("need", "want", "invest", "wellbeing"):
+            return jsonify({"error": "spending_type must be one of: need, want, invest, wellbeing"}), 400
 
         pool = _run(_get_web_pool())
         _run(_ensure_spending_type_column(pool))
