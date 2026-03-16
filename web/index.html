@@ -86,8 +86,8 @@
   .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
 
   /* Planned/unplanned distribution */
-  .planned-bar-container { margin-bottom: 16px; }
-  .planned-bar-labels { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px; }
+  .planned-bar-container { margin-bottom: 12px; border-top-color: #4f46e5; }
+  .planned-bar-labels { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 6px; }
   .planned-bar-labels .planned-label { color: #4f46e5; font-weight: 600; }
   .planned-bar-labels .unplanned-label { color: #f59e0b; font-weight: 600; }
   .planned-bar { height: 10px; border-radius: 5px; background: #f59e0b; overflow: hidden; }
@@ -150,6 +150,13 @@
     width: 100px; padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px;
     font-size: 0.85rem; text-align: right;
   }
+  .budget-item-row input[data-field="due_day"] {
+    width: 50px; text-align: center; color: #666;
+  }
+  .budget-item-row input[data-field="due_day"]::placeholder { color: #bbb; font-size: 0.75rem; }
+  .pace-card-green .value { color: #059669 !important; }
+  .pace-card-yellow .value { color: #d97706 !important; }
+  .pace-card-red .value { color: #dc2626 !important; }
   .budget-item-row input:focus { outline: none; border-color: #4f46e5; box-shadow: 0 0 0 2px rgba(79,70,229,0.15); }
   .budget-item-remove {
     background: none; border: none; color: #dc2626; cursor: pointer;
@@ -169,9 +176,11 @@
   .budget-add-cat button { padding: 6px 14px; border: 1px solid #4f46e5; border-radius: 4px; background: #fff; color: #4f46e5; font-size: 0.85rem; cursor: pointer; }
   .budget-add-cat button:hover { background: #f5f5ff; }
   .budget-totals {
-    display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+    display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
   }
-  .budget-totals .summary-card { flex: 1; min-width: 140px; }
+  .budget-totals .summary-card { flex: 1; min-width: 120px; border-top-color: #6b7280; }
+  .budget-totals .summary-card .label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+  .budget-totals .summary-card .value { font-size: 1.1rem; font-weight: 700; color: #1a1a1a; }
   .budget-spend-chart { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e5e5e5; }
   .budget-spend-chart canvas { max-height: 200px; }
 
@@ -257,26 +266,23 @@
   }
   .btn-analyze:hover { background: #4338ca; }
 
-  /* Spending type structure cards */
-  .spending-type-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  .spending-type-card {
-    flex: 1; min-width: 140px; border-radius: 8px; padding: 14px 18px;
-    border: 2px solid; text-align: center;
+  /* Uniform dashboard card base */
+  .dash-card {
+    background: #fff; border: 1px solid #e5e5e5; border-radius: 8px;
+    padding: 14px 18px; border-top: 3px solid #e5e5e5;
   }
-  .spending-type-card.need { border-color: #059669; background: #f0fdf4; }
-  .spending-type-card.want { border-color: #d97706; background: #fffbeb; }
-  .spending-type-card.invest { border-color: #2563eb; background: #eff6ff; }
-  .spending-type-card.wellbeing { border-color: #d946ef; background: #fdf4ff; }
-  .spending-type-card .st-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; }
-  .spending-type-card.need .st-label { color: #059669; }
-  .spending-type-card.want .st-label { color: #d97706; }
-  .spending-type-card.invest .st-label { color: #2563eb; }
-  .spending-type-card.wellbeing .st-label { color: #d946ef; }
-  .spending-type-card .st-pct { font-size: 1.4rem; font-weight: 700; }
-  .spending-type-card.need .st-pct { color: #059669; }
-  .spending-type-card.want .st-pct { color: #d97706; }
-  .spending-type-card.invest .st-pct { color: #2563eb; }
-  .spending-type-card.wellbeing .st-pct { color: #d946ef; }
+
+  /* Spending type structure cards */
+  .spending-type-cards { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .spending-type-card {
+    flex: 1; min-width: 140px; text-align: center;
+  }
+  .spending-type-card.need { border-top-color: #059669; }
+  .spending-type-card.want { border-top-color: #d97706; }
+  .spending-type-card.invest { border-top-color: #2563eb; }
+  .spending-type-card.wellbeing { border-top-color: #d946ef; }
+  .spending-type-card .st-label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; margin-bottom: 4px; color: #888; }
+  .spending-type-card .st-pct { font-size: 1.4rem; font-weight: 700; color: #1a1a1a; }
   .spending-type-card .st-amount { font-size: 0.8rem; color: #666; margin-top: 2px; }
 
   /* Spending type filter toggles */
@@ -1079,7 +1085,7 @@
     html += '<div class="spending-type-cards">';
     ['need', 'want', 'invest', 'wellbeing'].forEach(st => {
       const info = sts[st] || { amount: 0, percentage: 0 };
-      html += '<div class="spending-type-card ' + st + '">';
+      html += '<div class="dash-card spending-type-card ' + st + '">';
       html += '<div class="st-label">' + st.charAt(0).toUpperCase() + st.slice(1) + '</div>';
       html += '<div class="st-pct">' + info.percentage + '%</div>';
       html += '<div class="st-amount">' + fmt(info.amount) + ' RUB</div>';
@@ -1092,7 +1098,7 @@
     const pl = ps.planned || { amount: 0, percentage: 0 };
     const upl = ps.unplanned || { amount: 0, percentage: 0 };
     if (pl.amount > 0 || upl.amount > 0) {
-      html += '<div class="planned-bar-container">';
+      html += '<div class="dash-card planned-bar-container">';
       html += '<div class="planned-bar-labels">';
       html += '<span class="planned-label">Planned ' + pl.percentage + '% (' + fmt(pl.amount) + ')</span>';
       html += '<span class="unplanned-label">Unplanned ' + upl.percentage + '% (' + fmt(upl.amount) + ')</span>';
@@ -1117,10 +1123,63 @@
     }
     const displayDiff = Math.round((displayPlanned - displayActual) * 100) / 100;
 
+    // Compute smart pace for the Pace card
+    const budgetMonth = budgetMonthEl.value;
+    const bmStart = new Date(budgetMonth + '-01');
+    const bmEnd = new Date(bmStart.getFullYear(), bmStart.getMonth() + 1, 0);
+    const bmDays = bmEnd.getDate();
+    const bmToday = new Date();
+    const bmIsCurrentMonth = bmToday.getFullYear() === bmStart.getFullYear() && bmToday.getMonth() === bmStart.getMonth();
+    const bmTodayDay = bmIsCurrentMonth ? bmToday.getDate() : bmDays;
+
+    // Gather all items with due_day info
+    let allBudgetItems = [];
+    data.categories.forEach(cat => {
+      (cat.items || []).forEach(item => {
+        allBudgetItems.push({ amount: item.amount, due_day: item.due_day });
+      });
+    });
+
+    // Smart pace calculation
+    function calcSmartPace(day) {
+      let undatedTotal = 0;
+      let datedByDay = 0;
+      allBudgetItems.forEach(it => {
+        if (it.due_day != null) {
+          if (it.due_day <= day) datedByDay += it.amount;
+        } else {
+          undatedTotal += it.amount;
+        }
+      });
+      return datedByDay + (undatedTotal * day / bmDays);
+    }
+
+    const expectedByToday = calcSmartPace(bmTodayDay);
+
     html += '<div class="budget-totals">';
-    html += '<div class="summary-card"><div class="label">Planned</div><div class="value">' + fmt(displayPlanned) + ' RUB</div></div>';
-    html += '<div class="summary-card"><div class="label">Actual' + (filtering ? ' (filtered)' : '') + '</div><div class="value">' + fmt(displayActual) + ' RUB</div></div>';
-    html += '<div class="summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(displayDiff) + '">' + (displayDiff >= 0 ? '+' : '') + fmt(displayDiff) + ' RUB</div></div>';
+    html += '<div class="dash-card summary-card"><div class="label">Planned</div><div class="value">' + fmt(displayPlanned) + ' RUB</div></div>';
+    html += '<div class="dash-card summary-card"><div class="label">Actual' + (filtering ? ' (filtered)' : '') + '</div><div class="value">' + fmt(displayActual) + ' RUB</div></div>';
+    html += '<div class="dash-card summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(displayDiff) + '">' + (displayDiff >= 0 ? '+' : '') + fmt(displayDiff) + ' RUB</div></div>';
+
+    // Pace card
+    if (displayPlanned > 0) {
+      let paceLabel, paceValue, paceClass;
+      if (bmIsCurrentMonth) {
+        const runRate = displayActual - expectedByToday;
+        const runRatePct = expectedByToday > 0 ? (runRate / expectedByToday * 100) : 0;
+        paceValue = (runRate >= 0 ? '+' : '') + fmt(runRate);
+        if (runRate <= 0) paceClass = 'pace-card-green';
+        else if (runRatePct <= 10) paceClass = 'pace-card-yellow';
+        else paceClass = 'pace-card-red';
+        paceLabel = 'Pace';
+      } else {
+        const finalDiff = displayPlanned - displayActual;
+        paceValue = (finalDiff >= 0 ? '+' : '') + fmt(finalDiff);
+        paceClass = finalDiff >= 0 ? 'pace-card-green' : 'pace-card-red';
+        paceLabel = 'Final';
+      }
+      html += '<div class="dash-card summary-card ' + paceClass + '"><div class="label">' + paceLabel + '</div><div class="value">' + paceValue + ' RUB</div></div>';
+    }
     html += '</div>';
 
     // Cumulative spending chart
@@ -1162,6 +1221,7 @@
         html += '<div class="budget-item-row">';
         html += '<input type="text" value="' + (item.description || '').replace(/"/g, '&quot;') + '" placeholder="Description" data-ci="' + ci + '" data-ii="' + ii + '" data-field="description">';
         html += '<input type="number" value="' + (item.amount || '') + '" placeholder="0" min="0" step="100" data-ci="' + ci + '" data-ii="' + ii + '" data-field="amount">';
+        html += '<input type="number" value="' + (item.due_day != null ? item.due_day : '') + '" placeholder="Day" min="1" max="31" data-ci="' + ci + '" data-ii="' + ii + '" data-field="due_day" title="Due day of month (1-31)">';
         html += '<button class="budget-item-remove" data-ci="' + ci + '" data-ii="' + ii + '" title="Remove">&times;</button>';
         html += '</div>';
       });
@@ -1236,13 +1296,17 @@
         points.push({ x: endStr, y: cumulative });
       }
 
-      // Planned line: even daily pace across the month
+      // Smart planned pace line: step jumps for dated items, linear for undated
       const daysInMonth = monthEnd.getDate();
-      const dailyBudget = displayPlanned / daysInMonth;
-      const plannedPoints = [
-        { x: monthStart.toISOString().slice(0, 10), y: 0 },
-        { x: monthEnd.toISOString().slice(0, 10), y: Math.round(displayPlanned * 100) / 100 },
-      ];
+      const plannedPoints = [];
+      for (let d = 0; d <= daysInMonth; d++) {
+        const dateStr = new Date(monthStart.getFullYear(), monthStart.getMonth(), d === 0 ? 1 : d).toISOString().slice(0, 10);
+        const y = d === 0 ? 0 : Math.round(calcSmartPace(d) * 100) / 100;
+        // Avoid duplicate x values
+        if (plannedPoints.length === 0 || plannedPoints[plannedPoints.length - 1].x !== dateStr) {
+          plannedPoints.push({ x: dateStr, y });
+        }
+      }
 
       budgetSpendChart = new Chart(spendCtx, {
         type: 'line',
@@ -1261,11 +1325,12 @@
             {
               label: 'Planned pace',
               data: plannedPoints,
-              borderColor: '#d1d5db',
+              borderColor: '#9ca3af',
               borderDash: [6, 4],
               pointRadius: 0,
               borderWidth: 1.5,
               fill: false,
+              tension: 0,
             },
           ],
         },
@@ -1335,6 +1400,9 @@
           budgetData.categories[ci].items[ii].amount = parseFloat(input.value) || 0;
           recalcBudgetData();
           renderBudget();
+        } else if (field === 'due_day') {
+          const v = parseInt(input.value);
+          budgetData.categories[ci].items[ii].due_day = (v >= 1 && v <= 31) ? v : null;
         } else {
           budgetData.categories[ci].items[ii].description = input.value;
         }
@@ -1364,7 +1432,7 @@
         e.stopPropagation();
         const ci = parseInt(btn.dataset.ci);
         budgetOpenCats.add(budgetData.categories[ci].category);
-        budgetData.categories[ci].items.push({ description: '', amount: 0 });
+        budgetData.categories[ci].items.push({ description: '', amount: 0, due_day: null });
         recalcBudgetData();
         renderBudget();
         // Focus the new description input
@@ -1377,7 +1445,7 @@
     document.getElementById('budgetAddBtn').addEventListener('click', () => {
       const cat = addCatSelect.value;
       if (!cat) return;
-      budgetData.categories.push({ category: cat, items: [{ description: '', amount: 0 }], planned: 0, actual: 0, diff: 0 });
+      budgetData.categories.push({ category: cat, items: [{ description: '', amount: 0, due_day: null }], planned: 0, actual: 0, diff: 0 });
       budgetOpenCats.add(cat);
       recalcBudgetData();
       renderBudget();
@@ -1401,6 +1469,7 @@
             category: cat.category,
             description: item.description,
             amount: item.amount,
+            due_day: item.due_day || null,
           });
         }
       });
@@ -1454,11 +1523,11 @@
         prevWithItems.forEach(prevCat => {
           const existing = budgetData.categories.find(c => c.category === prevCat.category);
           if (existing) {
-            existing.items = prevCat.items.map(it => ({ description: it.description, amount: it.amount }));
+            existing.items = prevCat.items.map(it => ({ description: it.description, amount: it.amount, due_day: it.due_day || null }));
           } else {
             budgetData.categories.push({
               category: prevCat.category,
-              items: prevCat.items.map(it => ({ description: it.description, amount: it.amount })),
+              items: prevCat.items.map(it => ({ description: it.description, amount: it.amount, due_day: it.due_day || null })),
               actual: 0,
               planned: 0,
               diff: 0,
