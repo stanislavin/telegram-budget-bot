@@ -48,15 +48,16 @@ def test_clean_dsn_no_channel_binding():
 async def test_save_to_postgres_success(mock_pg_pool):
     """Test successful save to Postgres."""
     pg._spending_type_column_ensured = False
+    pg._planned_column_ensured = False
     mock_pg_pool.execute = AsyncMock()
 
     success, error = await pg.save_to_postgres(25.50, 'USD', 'food', 'lunch')
 
     assert success is True
     assert error is None
-    # Called twice: once for migration, once for insert
-    assert mock_pg_pool.execute.await_count == 2
-    insert_call = mock_pg_pool.execute.call_args_list[1]
+    # Called three times: spending_type migration, planned migration, insert
+    assert mock_pg_pool.execute.await_count == 3
+    insert_call = mock_pg_pool.execute.call_args_list[2]
     assert 'INSERT INTO expenses' in insert_call[0][0]
     assert insert_call[0][2] == 25.50  # amount
     assert insert_call[0][3] == 'USD'  # currency
