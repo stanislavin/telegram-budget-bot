@@ -370,7 +370,10 @@
 </style>
 </head>
 <body>
+<div style="display:flex;justify-content:space-between;align-items:baseline">
 <h1>Expense Trends</h1>
+<span id="versionHash" style="font-size:0.7rem;color:#bbb;font-family:monospace"></span>
+</div>
 <div class="tabs">
   <button class="tab active" id="tabBudget">Budget</button>
   <button class="tab" id="tabExpenses">Expenses</button>
@@ -691,6 +694,11 @@
   tabBudget.addEventListener('click', () => { switchTab(tabBudget); fetchBudget(); });
   tabExpenses.addEventListener('click', () => { switchTab(tabExpenses); fetchEditExpenses(); });
   tabAdmin.addEventListener('click', () => { switchTab(tabAdmin); fetchLLMSettings(); });
+
+  // Load version hash
+  fetch('/api/version').then(r => r.json()).then(d => {
+    document.getElementById('versionHash').textContent = d.commit || '';
+  }).catch(() => {});
 
   // Load categories
   fetch('/api/categories')

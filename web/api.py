@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import subprocess
 from datetime import datetime
 from threading import Thread
 
@@ -21,6 +22,14 @@ from util.llm_settings import (
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
+
+# Capture git commit hash at startup
+try:
+    _GIT_HASH = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+    ).decode().strip()
+except Exception:
+    _GIT_HASH = "unknown"
 
 # Persistent event loop running in a background thread.
 # The web API needs its own loop AND its own pool so it doesn't interfere
@@ -65,6 +74,11 @@ async def _get_web_pool():
 def _run(coro):
     """Submit a coroutine to the persistent loop and wait for the result."""
     return asyncio.run_coroutine_threadsafe(coro, _loop).result()
+
+
+@api_bp.route("/api/version")
+def version():
+    return jsonify({"commit": _GIT_HASH})
 
 
 @api_bp.route("/api/categories")
