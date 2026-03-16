@@ -248,10 +248,11 @@ def expenses():
 
 
 _BUDGET_TABLE_CREATED = False
+_due_day_col_ensured = False
 
 
 async def _ensure_budget_table(pool):
-    global _BUDGET_TABLE_CREATED
+    global _BUDGET_TABLE_CREATED, _due_day_col_ensured
     if not _BUDGET_TABLE_CREATED:
         await pool.execute("""
             CREATE TABLE IF NOT EXISTS budget_plan_items (
@@ -263,6 +264,11 @@ async def _ensure_budget_table(pool):
             )
         """)
         _BUDGET_TABLE_CREATED = True
+    if not _due_day_col_ensured:
+        await pool.execute(
+            "ALTER TABLE budget_plan_items ADD COLUMN IF NOT EXISTS due_day INTEGER DEFAULT NULL"
+        )
+        _due_day_col_ensured = True
 
 
 @api_bp.route("/api/budget", methods=["GET"])
@@ -289,7 +295,7 @@ def get_budget():
 
         # Get plan items
         item_rows = _run(pool.fetch(
-            """SELECT id, category, description, amount
+            """SELECT id, category, description, amount, due_day
                FROM budget_plan_items WHERE month = $1
                ORDER BY category, id""",
             dt_from.date(),
@@ -303,6 +309,7 @@ def get_budget():
                 "id": r["id"],
                 "description": r["description"],
                 "amount": round(float(r["amount"]), 2),
+                "due_day": r["due_day"],
             })
 
         # Get actual expenses with details (converted to RUB)
@@ -450,10 +457,18 @@ def save_budget():
                 amount = 0
             if not category or amount <= 0:
                 continue
+            due_day = item.get("due_day")
+            if due_day is not None:
+                try:
+                    due_day = int(due_day)
+                    if due_day < 1 or due_day > 31:
+                        due_day = None
+                except (ValueError, TypeError):
+                    due_day = None
             _run(pool.execute(
-                """INSERT INTO budget_plan_items (month, category, description, amount)
-                   VALUES ($1, $2, $3, $4)""",
-                month_date, category, description, amount,
+                """INSERT INTO budget_plan_items (month, category, description, amount, due_day)
+                   VALUES ($1, $2, $3, $4, $5)""",
+                month_date, category, description, amount, due_day,
             ))
 
         return jsonify({"ok": True})

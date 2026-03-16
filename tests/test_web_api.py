@@ -520,6 +520,55 @@ class TestSaveBudget:
         )
         assert response.status_code == 200
 
+    def test_save_budget_with_due_day(self, budget_client):
+        test_client, mock_pool = budget_client
+        response = test_client.post(
+            "/api/budget",
+            data=json.dumps({
+                "month": "2025-01",
+                "items": [
+                    {"category": "rent", "description": "apartment", "amount": 50000, "due_day": 1},
+                    {"category": "food", "description": "groceries", "amount": 10000, "due_day": None},
+                ],
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.data)["ok"] is True
+
+    def test_save_budget_due_day_validation(self, budget_client):
+        """due_day out of range (0, 32, negative) should be treated as None."""
+        test_client, mock_pool = budget_client
+        response = test_client.post(
+            "/api/budget",
+            data=json.dumps({
+                "month": "2025-01",
+                "items": [
+                    {"category": "food", "description": "x", "amount": 100, "due_day": 0},
+                    {"category": "food", "description": "y", "amount": 200, "due_day": 32},
+                    {"category": "food", "description": "z", "amount": 300, "due_day": "bad"},
+                ],
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+
+    def test_save_budget_due_day_absent_defaults_none(self, budget_client):
+        """Items without due_day key should save fine (defaults to None)."""
+        test_client, mock_pool = budget_client
+        response = test_client.post(
+            "/api/budget",
+            data=json.dumps({
+                "month": "2025-01",
+                "items": [
+                    {"category": "food", "description": "groceries", "amount": 5000},
+                ],
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.data)["ok"] is True
+
     def test_db_error_returns_500(self, budget_client):
         test_client, mock_pool = budget_client
         mock_pool.fetch = MagicMock(side_effect=Exception("db error"))
