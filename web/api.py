@@ -1,13 +1,12 @@
 import asyncio
 import logging
-import subprocess
 from datetime import datetime
 from threading import Thread
 
 import asyncpg
 from flask import Blueprint, jsonify, request
 
-from util.config import DATABASE_URL
+from util.config import DATABASE_URL, GIT_COMMIT_SHORT
 from util.openrouter import _call_chat_completion, _build_provider_chain, _build_provider_chain_dynamic
 from util.postgres import _clean_dsn
 from util.llm_settings import (
@@ -22,14 +21,6 @@ from util.llm_settings import (
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
-
-# Capture git commit hash at startup
-try:
-    _GIT_HASH = subprocess.check_output(
-        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
-    ).decode().strip()
-except Exception:
-    _GIT_HASH = "unknown"
 
 # Persistent event loop running in a background thread.
 # The web API needs its own loop AND its own pool so it doesn't interfere
@@ -78,7 +69,7 @@ def _run(coro):
 
 @api_bp.route("/api/version")
 def version():
-    return jsonify({"commit": _GIT_HASH})
+    return jsonify({"commit": GIT_COMMIT_SHORT})
 
 
 @api_bp.route("/api/categories")

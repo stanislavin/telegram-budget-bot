@@ -29,6 +29,7 @@ from util.config import (
     OPENROUTER_FALLBACK_MODELS,
     SERVICE_URL,
     DATABASE_URL,
+    GIT_COMMIT_SHORT,
 )
 from util.sheets import (
     save_to_sheets,
@@ -870,7 +871,7 @@ def _get_last_commit_info() -> str:
     """Return a short summary of the last git commit, or a fallback message."""
     try:
         subject = subprocess.check_output(
-            ["git", "log", "-1", "--pretty=format:%h %s"],
+            ["git", "log", "-1", "--pretty=format:%s"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
@@ -879,9 +880,10 @@ def _get_last_commit_info() -> str:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        return f"{subject}\n{files}" if files else subject
+        info = f"{GIT_COMMIT_SHORT} {subject}"
+        return f"{info}\n{files}" if files else info
     except Exception:
-        return "(git info unavailable)"
+        return f"{GIT_COMMIT_SHORT}" if GIT_COMMIT_SHORT != "unknown" else "(git info unavailable)"
 
 
 def _get_bot_info_text() -> str:
