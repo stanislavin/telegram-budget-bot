@@ -1291,15 +1291,20 @@
       const today = new Date();
       const isCurrentMonth = today.getFullYear() === monthStart.getFullYear() && today.getMonth() === monthStart.getMonth();
 
+      // Format date as YYYY-MM-DD in local timezone (avoids UTC shift from toISOString)
+      function localDateStr(dt) {
+        return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      }
+
       let cumulative = 0;
-      const points = [{ x: monthStart.toISOString().slice(0, 10), y: 0 }];
+      const points = [{ x: localDateStr(monthStart), y: 0 }];
       allExpenses.forEach(e => {
         cumulative = Math.round((cumulative + e.amount) * 100) / 100;
         points.push({ x: e.date.slice(0, 10), y: cumulative });
       });
       // Extend to today or month end
       const endDate = isCurrentMonth ? today : monthEnd;
-      const endStr = endDate.toISOString().slice(0, 10);
+      const endStr = localDateStr(endDate);
       if (points[points.length - 1].x < endStr) {
         points.push({ x: endStr, y: cumulative });
       }
@@ -1308,7 +1313,7 @@
       const daysInMonth = monthEnd.getDate();
       const plannedPoints = [];
       for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = new Date(monthStart.getFullYear(), monthStart.getMonth(), d).toISOString().slice(0, 10);
+        const dateStr = localDateStr(new Date(monthStart.getFullYear(), monthStart.getMonth(), d));
         const y = Math.round(calcSmartPace(d) * 100) / 100;
         plannedPoints.push({ x: dateStr, y });
       }
@@ -1346,8 +1351,8 @@
             x: {
               type: 'time',
               time: { unit: 'day', tooltipFormat: 'MMM d' },
-              min: monthStart.toISOString().slice(0, 10),
-              max: monthEnd.toISOString().slice(0, 10),
+              min: localDateStr(monthStart),
+              max: localDateStr(monthEnd),
               grid: { display: false },
               ticks: { font: { size: 11 }, maxTicksLimit: 10 },
             },
