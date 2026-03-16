@@ -366,12 +366,12 @@
 <body>
 <h1>Expense Trends</h1>
 <div class="tabs">
-  <button class="tab active" id="tabTrends">Trends</button>
-  <button class="tab" id="tabBudget">Budget</button>
+  <button class="tab active" id="tabBudget">Budget</button>
   <button class="tab" id="tabExpenses">Expenses</button>
+  <button class="tab" id="tabTrends">Trends</button>
   <button class="tab" id="tabAdmin">Admin</button>
 </div>
-<div class="controls" id="trendsControls">
+<div class="controls" id="trendsControls" style="display: none;">
   <div class="control-group">
     <label>Categories</label>
     <div class="multi-select" id="categorySelect">
@@ -413,11 +413,11 @@
     <input type="month" id="monthTo">
   </div>
 </div>
-<div class="chart-container" id="trendsContainer">
+<div class="chart-container" id="trendsContainer" style="display: none;">
   <div class="loading" id="loading">Loading...</div>
   <canvas id="chart"></canvas>
 </div>
-<div class="controls" id="budgetControls" style="display: none;">
+<div class="controls" id="budgetControls">
   <div class="control-group">
     <label>Month</label>
     <input type="month" id="budgetMonth">
@@ -432,7 +432,7 @@
     </div>
   </div>
 </div>
-<div class="chart-container" id="budgetContainer" style="display: none;">
+<div class="chart-container" id="budgetContainer">
   <div class="loading" id="budgetLoading">Loading...</div>
   <div id="budgetContent"></div>
 </div>
@@ -456,6 +456,14 @@
       <option value="invest">Invest</option>
       <option value="wellbeing">Wellbeing</option>
       <option value="unset">Unset</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Planned</label>
+    <select id="editExpensesPlannedFilter">
+      <option value="">All</option>
+      <option value="planned">Planned</option>
+      <option value="unplanned">Unplanned</option>
     </select>
   </div>
   <button class="btn-analyze" id="analyzeBtn">Analyze</button>
@@ -539,6 +547,7 @@
   const editExpensesContent = document.getElementById('editExpensesContent');
   const editExpensesCatFilter = document.getElementById('editExpensesCatFilter');
   const editExpensesTypeFilter = document.getElementById('editExpensesTypeFilter');
+  const editExpensesPlannedFilter = document.getElementById('editExpensesPlannedFilter');
 
   let chart = null;
   let chartData = [];
@@ -685,7 +694,7 @@
       cats.forEach(c => selectedCategories.add(c));
       renderCategoryItems();
       updateCategoryBtnLabel();
-      fetchData();
+      fetchBudget();
     })
     .catch(err => console.error('Failed to load categories:', err));
 
@@ -989,6 +998,7 @@
   editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
   editExpensesCatFilter.addEventListener('change', renderFilteredExpenses);
   editExpensesTypeFilter.addEventListener('change', renderFilteredExpenses);
+  editExpensesPlannedFilter.addEventListener('change', renderFilteredExpenses);
 
   // Spending type filter toggles
   document.querySelectorAll('#spendingTypeFilter button').forEach(btn => {
@@ -1501,10 +1511,13 @@
   function renderFilteredExpenses() {
     const catFilter = editExpensesCatFilter.value;
     const typeFilter = editExpensesTypeFilter.value;
+    const plannedFilter = editExpensesPlannedFilter.value;
     let filtered = allEditExpenses;
     if (catFilter) filtered = filtered.filter(e => e.category === catFilter);
     if (typeFilter === 'unset') filtered = filtered.filter(e => !e.spending_type);
     else if (typeFilter) filtered = filtered.filter(e => e.spending_type === typeFilter);
+    if (plannedFilter === 'planned') filtered = filtered.filter(e => e.planned);
+    else if (plannedFilter === 'unplanned') filtered = filtered.filter(e => !e.planned);
     renderEditExpenses(filtered);
   }
 
