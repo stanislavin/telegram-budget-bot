@@ -668,7 +668,7 @@ def analyze_expenses():
                 result, used_model = _call_chat_completion(
                     url, headers, model, messages, timeout=max(timeout, 60)
                 )
-                return jsonify({"response": result, "model": used_model})
+                return jsonify({"response": result, "model": used_model, "full_prompt": system_msg + "\n\n" + user_msg})
             except Exception as e:
                 logger.warning(f"Analyze: model {model} failed: {e}")
                 last_error = e
