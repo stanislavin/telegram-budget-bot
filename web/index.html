@@ -85,6 +85,18 @@
   .tab:hover { color: #4f46e5; }
   .tab.active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
 
+  /* Planned/unplanned distribution */
+  .planned-bar-container { margin-bottom: 16px; }
+  .planned-bar-labels { display: flex; justify-content: space-between; font-size: 0.8rem; margin-bottom: 4px; }
+  .planned-bar-labels .planned-label { color: #4f46e5; font-weight: 600; }
+  .planned-bar-labels .unplanned-label { color: #f59e0b; font-weight: 600; }
+  .planned-bar { height: 10px; border-radius: 5px; background: #f59e0b; overflow: hidden; }
+  .planned-bar-fill { height: 100%; background: #4f46e5; border-radius: 5px 0 0 5px; transition: width 0.3s; }
+
+  /* Planned toggle in edit expenses */
+  .planned-toggle { cursor: pointer; font-size: 0.85rem; user-select: none; }
+  .planned-toggle .planned-icon { display: inline-block; width: 18px; text-align: center; }
+
   /* Budget tab */
   .budget-diff-positive { color: #059669; font-weight: 600; }
   .budget-diff-negative { color: #dc2626; font-weight: 600; }
@@ -1052,6 +1064,20 @@
     });
     html += '</div>';
 
+    // Planned vs unplanned distribution bar
+    const ps = data.planned_summary || {};
+    const pl = ps.planned || { amount: 0, percentage: 0 };
+    const upl = ps.unplanned || { amount: 0, percentage: 0 };
+    if (pl.amount > 0 || upl.amount > 0) {
+      html += '<div class="planned-bar-container">';
+      html += '<div class="planned-bar-labels">';
+      html += '<span class="planned-label">Planned ' + pl.percentage + '% (' + fmt(pl.amount) + ')</span>';
+      html += '<span class="unplanned-label">Unplanned ' + upl.percentage + '% (' + fmt(upl.amount) + ')</span>';
+      html += '</div>';
+      html += '<div class="planned-bar"><div class="planned-bar-fill" style="width:' + pl.percentage + '%"></div></div>';
+      html += '</div>';
+    }
+
     // Summary cards — recalculate if filtering
     let displayPlanned = data.total_planned;
     let displayActual = data.total_actual;
@@ -1490,7 +1516,7 @@
     html += '</div>';
 
     html += '<table class="edit-expenses-table"><thead><tr>';
-    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th><th></th>';
+    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th><th>Planned</th><th></th>';
     html += '</tr></thead><tbody>';
 
     data.forEach(exp => {
@@ -1514,6 +1540,12 @@
       });
       html += '</select>';
       html += '<span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span>';
+      html += '</td>';
+      html += '<td>';
+      const isPlanned = exp.planned !== false;
+      html += '<span class="planned-toggle" data-id="' + exp.id + '" data-planned="' + isPlanned + '">';
+      html += '<span class="planned-icon">' + (isPlanned ? '✓' : '✗') + '</span>';
+      html += '</span>';
       html += '</td>';
       html += '<td><button class="expense-delete" data-id="' + exp.id + '" title="Delete">&times;</button></td>';
       html += '</tr>';
@@ -1581,6 +1613,33 @@
           })
           .catch(err => {
             alert('Error saving spending type');
+            console.error(err);
+          });
+      });
+    });
+
+    // Attach planned toggle handlers
+    editExpensesContent.querySelectorAll('.planned-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        const id = toggle.dataset.id;
+        const current = toggle.dataset.planned === 'true';
+        const newVal = !current;
+
+        fetch('/api/expenses/' + id + '/planned', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ planned: newVal }),
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.error) { alert('Error: ' + resp.error); return; }
+            const exp = allEditExpenses.find(e => String(e.id) === id);
+            if (exp) exp.planned = newVal;
+            toggle.dataset.planned = String(newVal);
+            toggle.querySelector('.planned-icon').textContent = newVal ? '✓' : '✗';
+          })
+          .catch(err => {
+            alert('Error saving planned flag');
             console.error(err);
           });
       });

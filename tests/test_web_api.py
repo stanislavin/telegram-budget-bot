@@ -547,6 +547,7 @@ class TestMonthlyExpenses:
                     "category": "food",
                     "description": "lunch",
                     "spending_type": "need",
+                    "planned": True,
                 },
             ]
         )
@@ -557,6 +558,7 @@ class TestMonthlyExpenses:
         assert data[0]["id"] == 42
         assert data[0]["timestamp"] == "2025-01-15 12:30"
         assert data[0]["spending_type"] == "need"
+        assert data[0]["planned"] is True
 
     def test_missing_month_returns_400(self, client):
         test_client, _ = client

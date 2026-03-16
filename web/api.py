@@ -32,6 +32,7 @@ _thread.start()
 
 _web_pool = None
 _spending_type_col_ensured = False
+_planned_col_ensured = False
 
 
 async def _ensure_spending_type_column(pool):
@@ -41,6 +42,15 @@ async def _ensure_spending_type_column(pool):
             "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spending_type VARCHAR DEFAULT NULL"
         )
         _spending_type_col_ensured = True
+
+
+async def _ensure_planned_column(pool):
+    global _planned_col_ensured
+    if not _planned_col_ensured:
+        await pool.execute(
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS planned BOOLEAN DEFAULT TRUE"
+        )
+        _planned_col_ensured = True
 
 
 async def _get_web_pool():
@@ -297,8 +307,10 @@ def get_budget():
 
         # Get actual expenses with details (converted to RUB)
         _run(_ensure_spending_type_column(pool))
+        _run(_ensure_planned_column(pool))
         expense_rows = _run(pool.fetch("""
             SELECT e.category, e.timestamp, e.description, e.spending_type,
+                   COALESCE(e.planned, TRUE) AS planned,
                    e.amount AS orig_amount, e.currency AS orig_currency,
                    CASE
                        WHEN e.currency = 'RUB' THEN e.amount
@@ -339,6 +351,7 @@ def get_budget():
                 "orig_amount": float(r["orig_amount"]),
                 "orig_currency": r["orig_currency"],
                 "spending_type": st,
+                "planned": r["planned"],
             })
         # Round totals
         actuals = {k: round(v, 2) for k, v in actuals.items()}
@@ -370,6 +383,21 @@ def get_budget():
             pct = round(amount / st_total * 100, 1) if st_total > 0 else 0
             spending_type_summary[st] = {"amount": amount, "percentage": pct}
 
+        # Planned vs unplanned summary
+        planned_total = 0
+        unplanned_total = 0
+        for cat_data in data:
+            for exp in cat_data.get("expenses", []):
+                if exp["planned"]:
+                    planned_total += exp["amount"]
+                else:
+                    unplanned_total += exp["amount"]
+        p_total = planned_total + unplanned_total
+        planned_summary = {
+            "planned": {"amount": round(planned_total, 2), "percentage": round(planned_total / p_total * 100, 1) if p_total > 0 else 0},
+            "unplanned": {"amount": round(unplanned_total, 2), "percentage": round(unplanned_total / p_total * 100, 1) if p_total > 0 else 0},
+        }
+
         return jsonify({
             "month": month,
             "categories": data,
@@ -377,6 +405,7 @@ def get_budget():
             "total_actual": round(total_actual, 2),
             "total_diff": round(total_planned - total_actual, 2),
             "spending_type_summary": spending_type_summary,
+            "planned_summary": planned_summary,
         })
     except Exception as e:
         logger.error(f"Error fetching budget: {e}", exc_info=True)
@@ -454,8 +483,10 @@ def monthly_expenses():
 
         pool = _run(_get_web_pool())
         _run(_ensure_spending_type_column(pool))
+        _run(_ensure_planned_column(pool))
         rows = _run(pool.fetch("""
-            SELECT id, timestamp, amount, currency, category, description, spending_type
+            SELECT id, timestamp, amount, currency, category, description, spending_type,
+                   COALESCE(planned, TRUE) AS planned
             FROM expenses
             WHERE timestamp >= $1 AND timestamp < $2
             ORDER BY timestamp DESC
@@ -471,6 +502,7 @@ def monthly_expenses():
                 "category": row["category"],
                 "description": row["description"] or "",
                 "spending_type": row["spending_type"],
+                "planned": row["planned"],
             })
 
         return jsonify(data)
@@ -549,6 +581,34 @@ def update_expense_spending_type(expense_id):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error updating expense spending type: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/expenses/<int:expense_id>/planned", methods=["PATCH"])
+def update_expense_planned(expense_id):
+    """Update the planned flag of a specific expense."""
+    try:
+        body = request.get_json()
+        if not body or "planned" not in body:
+            return jsonify({"error": "planned is required"}), 400
+
+        planned = body["planned"]
+        if not isinstance(planned, bool):
+            return jsonify({"error": "planned must be a boolean"}), 400
+
+        pool = _run(_get_web_pool())
+        _run(_ensure_planned_column(pool))
+        result = _run(pool.execute(
+            "UPDATE expenses SET planned = $1 WHERE id = $2",
+            planned, expense_id,
+        ))
+
+        if result == "UPDATE 0":
+            return jsonify({"error": "expense not found"}), 404
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error updating expense planned flag: {e}", exc_info=True)
         return jsonify({"error": str(e)}), 500
 
 

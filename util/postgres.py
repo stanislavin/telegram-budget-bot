@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 _pool = None
 _spending_type_column_ensured = False
+_planned_column_ensured = False
 
 
 async def _ensure_spending_type_column(pool):
@@ -21,6 +22,16 @@ async def _ensure_spending_type_column(pool):
             "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS spending_type VARCHAR DEFAULT NULL"
         )
         _spending_type_column_ensured = True
+
+
+async def _ensure_planned_column(pool):
+    """Lazily add planned column to expenses table if it doesn't exist."""
+    global _planned_column_ensured
+    if not _planned_column_ensured:
+        await pool.execute(
+            "ALTER TABLE expenses ADD COLUMN IF NOT EXISTS planned BOOLEAN DEFAULT TRUE"
+        )
+        _planned_column_ensured = True
 
 
 def _clean_dsn(dsn: str) -> str:
@@ -38,15 +49,16 @@ async def get_pool() -> asyncpg.Pool:
 
 
 @with_retry(max_retries=1, error_message="Error saving to PostgreSQL")
-async def save_to_postgres(amount: float, currency: str, category: str, description: str, spending_type: str = None):
+async def save_to_postgres(amount: float, currency: str, category: str, description: str, spending_type: str = None, planned: bool = True):
     """Insert a new expense row into PostgreSQL."""
     pool = await get_pool()
     await _ensure_spending_type_column(pool)
+    await _ensure_planned_column(pool)
     timestamp = datetime.now()
     await pool.execute(
-        """INSERT INTO expenses (timestamp, amount, currency, category, description, source_file, spending_type)
-           VALUES ($1, $2, $3, $4, $5, 'bot', $6)""",
-        timestamp, float(amount), currency, category, description, spending_type,
+        """INSERT INTO expenses (timestamp, amount, currency, category, description, source_file, spending_type, planned)
+           VALUES ($1, $2, $3, $4, $5, 'bot', $6, $7)""",
+        timestamp, float(amount), currency, category, description, spending_type, planned,
     )
     return True
 
