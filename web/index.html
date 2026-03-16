@@ -160,6 +160,8 @@
     display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
   }
   .budget-totals .summary-card { flex: 1; min-width: 140px; }
+  .budget-spend-chart { background: #fff; border-radius: 8px; padding: 16px; margin-bottom: 16px; border: 1px solid #e5e5e5; }
+  .budget-spend-chart canvas { max-height: 200px; }
 
   /* Edit expenses tab */
   .edit-expenses-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
@@ -982,6 +984,7 @@
 
   // --- Budget ---
   let budgetData = null;
+  let budgetSpendChart = null;
   let budgetOpenCats = new Set(); // track which categories are expanded
 
   function fetchBudget() {
@@ -1071,6 +1074,9 @@
     html += '<div class="summary-card"><div class="label">Remaining</div><div class="value ' + diffClass(displayDiff) + '">' + (displayDiff >= 0 ? '+' : '') + fmt(displayDiff) + ' RUB</div></div>';
     html += '</div>';
 
+    // Cumulative spending chart
+    html += '<div class="budget-spend-chart"><canvas id="budgetSpendChart"></canvas></div>';
+
     // Category cards
     data.categories.forEach((cat, ci) => {
       // Calculate filtered actual if spending type filter is active
@@ -1146,6 +1152,101 @@
     html += '</div>';
 
     budgetContent.innerHTML = html;
+
+    // Render cumulative spending chart
+    if (budgetSpendChart) { budgetSpendChart.destroy(); budgetSpendChart = null; }
+    const spendCtx = document.getElementById('budgetSpendChart');
+    if (spendCtx && displayPlanned > 0) {
+      // Collect all expenses with timestamps
+      let allExpenses = [];
+      data.categories.forEach(cat => {
+        const exps = filtering
+          ? (cat.expenses || []).filter(e => e.spending_type && activeSpendingTypes.has(e.spending_type))
+          : (cat.expenses || []);
+        exps.forEach(e => { allExpenses.push({ date: e.timestamp, amount: e.amount }); });
+      });
+      allExpenses.sort((a, b) => a.date.localeCompare(b.date));
+
+      // Build cumulative series
+      const month = budgetMonthEl.value; // "YYYY-MM"
+      const monthStart = new Date(month + '-01');
+      const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0); // last day
+      const today = new Date();
+      const isCurrentMonth = today.getFullYear() === monthStart.getFullYear() && today.getMonth() === monthStart.getMonth();
+
+      let cumulative = 0;
+      const points = [{ x: monthStart.toISOString().slice(0, 10), y: 0 }];
+      allExpenses.forEach(e => {
+        cumulative = Math.round((cumulative + e.amount) * 100) / 100;
+        points.push({ x: e.date.slice(0, 10), y: cumulative });
+      });
+      // Extend to today or month end
+      const endDate = isCurrentMonth ? today : monthEnd;
+      const endStr = endDate.toISOString().slice(0, 10);
+      if (points[points.length - 1].x < endStr) {
+        points.push({ x: endStr, y: cumulative });
+      }
+
+      // Planned line: even daily pace across the month
+      const daysInMonth = monthEnd.getDate();
+      const dailyBudget = displayPlanned / daysInMonth;
+      const plannedPoints = [
+        { x: monthStart.toISOString().slice(0, 10), y: 0 },
+        { x: monthEnd.toISOString().slice(0, 10), y: Math.round(displayPlanned * 100) / 100 },
+      ];
+
+      budgetSpendChart = new Chart(spendCtx, {
+        type: 'line',
+        data: {
+          datasets: [
+            {
+              label: 'Actual',
+              data: points,
+              borderColor: '#4f46e5',
+              backgroundColor: 'rgba(79,70,229,0.08)',
+              fill: true,
+              tension: 0.2,
+              pointRadius: 2,
+              borderWidth: 2,
+            },
+            {
+              label: 'Planned pace',
+              data: plannedPoints,
+              borderColor: '#d1d5db',
+              borderDash: [6, 4],
+              pointRadius: 0,
+              borderWidth: 1.5,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              type: 'time',
+              time: { unit: 'day', tooltipFormat: 'MMM d' },
+              min: monthStart.toISOString().slice(0, 10),
+              max: monthEnd.toISOString().slice(0, 10),
+              grid: { display: false },
+              ticks: { font: { size: 11 }, maxTicksLimit: 10 },
+            },
+            y: {
+              beginAtZero: true,
+              ticks: { font: { size: 11 }, callback: v => fmt(v) },
+              grid: { color: '#f0f0f0' },
+            },
+          },
+          plugins: {
+            legend: { display: true, position: 'top', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+              callbacks: { label: ctx => ctx.dataset.label + ': ' + fmt(ctx.parsed.y) + ' RUB' },
+            },
+          },
+        },
+      });
+    }
 
     // Populate add-category dropdown
     const existingCats = new Set(data.categories.map(c => c.category));
