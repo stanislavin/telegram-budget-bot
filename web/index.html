@@ -1299,13 +1299,10 @@
       // Smart planned pace line: step jumps for dated items, linear for undated
       const daysInMonth = monthEnd.getDate();
       const plannedPoints = [];
-      for (let d = 0; d <= daysInMonth; d++) {
-        const dateStr = new Date(monthStart.getFullYear(), monthStart.getMonth(), d === 0 ? 1 : d).toISOString().slice(0, 10);
-        const y = d === 0 ? 0 : Math.round(calcSmartPace(d) * 100) / 100;
-        // Avoid duplicate x values
-        if (plannedPoints.length === 0 || plannedPoints[plannedPoints.length - 1].x !== dateStr) {
-          plannedPoints.push({ x: dateStr, y });
-        }
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = new Date(monthStart.getFullYear(), monthStart.getMonth(), d).toISOString().slice(0, 10);
+        const y = Math.round(calcSmartPace(d) * 100) / 100;
+        plannedPoints.push({ x: dateStr, y });
       }
 
       budgetSpendChart = new Chart(spendCtx, {
