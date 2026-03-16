@@ -932,10 +932,11 @@ async def test_button_callback_expired_no_processed_text(mock_update, mock_conte
 
 
 def test_get_last_commit_info_success():
-    """Test _get_last_commit_info returns commit summary (lines 533-542)."""
-    with patch("util.telegram.subprocess.check_output") as mock_check:
+    """Test _get_last_commit_info returns commit summary."""
+    with patch("util.telegram.subprocess.check_output") as mock_check, \
+         patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
         mock_check.side_effect = [
-            "abc1234 Fix bug",
+            "Fix bug",
             "bot.py\nutil/telegram.py",
         ]
         result = _get_last_commit_info()
@@ -946,9 +947,10 @@ def test_get_last_commit_info_success():
 
 def test_get_last_commit_info_no_changed_files():
     """Test _get_last_commit_info when diff-tree returns no files."""
-    with patch("util.telegram.subprocess.check_output") as mock_check:
+    with patch("util.telegram.subprocess.check_output") as mock_check, \
+         patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
         mock_check.side_effect = [
-            "abc1234 Fix bug",
+            "Fix bug",
             "",  # no files changed
         ]
         result = _get_last_commit_info()
@@ -957,10 +959,20 @@ def test_get_last_commit_info_no_changed_files():
 
 
 def test_get_last_commit_info_error():
-    """Test _get_last_commit_info fallback on exception (lines 543-544)."""
+    """Test _get_last_commit_info fallback on exception."""
     with patch(
         "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
-    ):
+    ), patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
+        result = _get_last_commit_info()
+
+    assert result == "abc1234"
+
+
+def test_get_last_commit_info_error_unknown():
+    """Test _get_last_commit_info fallback when git hash is also unavailable."""
+    with patch(
+        "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
+    ), patch("util.telegram.GIT_COMMIT_SHORT", "unknown"):
         result = _get_last_commit_info()
 
     assert result == "(git info unavailable)"

@@ -1,5 +1,6 @@
 import os
 import logging
+import subprocess
 from dotenv import load_dotenv
 
 # Configure logging
@@ -47,6 +48,14 @@ HEALTH_CHECK_HOST = '0.0.0.0'
 
 # PostgreSQL Configuration (Neon)
 DATABASE_URL = os.getenv('DATABASE_URL')
+
+# Git info (captured once at startup)
+try:
+    GIT_COMMIT_SHORT = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
+    ).strip()
+except Exception:
+    GIT_COMMIT_SHORT = "unknown"
 
 # Prompt Configuration
 _LLM_PROMPT = None
