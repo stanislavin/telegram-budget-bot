@@ -1,3 +1,5 @@
+from asyncio import CancelledError
+
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch, call
 from telegram import (
@@ -6,6 +8,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    CallbackQuery,
 )
 from telegram.ext import ContextTypes
 import asyncio
@@ -28,6 +31,9 @@ from util.telegram import (
     undo_command,
     create_application,
     start_telegram_polling,
+    app_command,
+    _category_picker_keyboard,
+    _send_filtered_expenses,
     PROCESSED_EXPENSE_TTL_SECONDS,
     _get_last_commit_info,
     _get_bot_info_text,
@@ -99,6 +105,14 @@ def mock_context():
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     context.bot = MagicMock()
     return context
+
+
+@pytest.fixture
+def mock_message_to_edit():
+    """Fixture to mock a message for editing."""
+    msg = MagicMock()
+    msg.edit_text = AsyncMock()
+    return msg
 
 
 @pytest.mark.asyncio
@@ -994,3 +1008,165 @@ def test_get_bot_info_text():
     assert "LLM" in result
     assert "Fallbacks" in result
     assert "Last commit" in result
+
+
+# ---------- app_command APK not found ----------
+
+
+async def test_app_command_apk_not_found(mock_update, mock_context):
+    """Test app_command when APK file doesn't exist."""
+    with patch("util.telegram.os.path.isfile", return_value=False):
+        await app_command(mock_update, mock_context)
+
+    mock_update.message.reply_text.assert_called_once_with(
+        "APK not available. Please build it first with `make build-apk`."
+    )
+
+
+# ---------- _category_picker_keyboard ----------
+
+
+def test_category_picker_keyboard():
+    """Test _category_picker_keyboard builds category filter keyboard."""
+    with patch("util.telegram.CATEGORIES", ["food", "transport", "housing"]):
+        markup = _category_picker_keyboard()
+
+    assert isinstance(markup, InlineKeyboardMarkup)
+    assert len(markup.inline_keyboard) == 2  # 3 cats in first row + Show All
+
+
+def test_category_picker_keyboard_single_category():
+    """Test _category_picker_keyboard with single category."""
+    with patch("util.telegram.CATEGORIES", ["food"]):
+        markup = _category_picker_keyboard()
+
+    assert len(markup.inline_keyboard) == 2
+    assert markup.inline_keyboard[0][0].text == "food"
+
+
+# ---------- _send_filtered_expenses with filters ----------
+
+
+async def test_send_filtered_expenses_by_category(mock_message_to_edit):
+    """Test _send_filtered_expenses with category filter."""
+    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = "Expense list for food"
+        await _send_filtered_expenses(mock_message_to_edit, category="food")
+
+    mock_get.assert_called_once_with(category="food")
+    mock_message_to_edit.edit_text.assert_called_once()
+
+
+async def test_send_filtered_expenses_by_spending_type(mock_message_to_edit):
+    """Test _send_filtered_expenses with spending_type filter."""
+    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = "Expense list for need"
+        await _send_filtered_expenses(mock_message_to_edit, spending_type="need")
+
+    mock_get.assert_called_once_with(spending_type="need")
+    mock_message_to_edit.edit_text.assert_called_once()
+
+
+async def test_send_filtered_expenses_both_filters(mock_message_to_edit):
+    """Test _send_filtered_expenses with both category and spending_type."""
+    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = "Expense list"
+        await _send_filtered_expenses(
+            mock_message_to_edit, category="food", spending_type="need"
+        )
+
+    mock_get.assert_called_once_with(category="food", spending_type="need")
+
+
+async def test_send_filtered_expenses_truncation(mock_message_to_edit):
+    """Test _send_filtered_expenses truncates long messages."""
+    long_text = "x" * 5000
+
+    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+        mock_get.return_value = long_text
+        await _send_filtered_expenses(mock_message_to_edit, category="food")
+
+    call_args = mock_message_to_edit.edit_text.call_args
+    assert len(call_args[0][0]) < 4096
+    call_args[0][0].endswith("\n... (truncated)")
+
+
+# ---------- _schedule_auto_confirm RuntimeError handling ----------
+
+
+def test_schedule_auto_confirm_runtime_error_on_cancel():
+    """Test _schedule_auto_confirm handles RuntimeError on cancel."""
+    mock_context = MagicMock()
+    mock_task = MagicMock()
+    mock_task.cancel.side_effect = RuntimeError("Task cancelled")
+
+    with patch("util.telegram.auto_confirm_tasks", {"expense1": mock_task}), \
+         patch("util.telegram.asyncio.create_task"):
+        _schedule_auto_confirm("expense1", mock_context)
+
+
+def test_schedule_auto_confirm_runtime_error_on_create():
+    """Test _schedule_auto_confirm handles RuntimeError on create_task."""
+    mock_context = MagicMock()
+
+    with patch("util.telegram.asyncio.create_task", side_effect=RuntimeError("No loop")):
+        _schedule_auto_confirm("expense1", mock_context)
+
+
+# ---------- _cleanup_processed_expense CancelledError ----------
+
+
+async def test_cleanup_processed_expense_cancelled():
+    """Test _cleanup_processed_expense handles CancelledError."""
+    with patch("util.telegram.asyncio.sleep", side_effect=CancelledError()):
+        await _cleanup_processed_expense("expense1")
+
+    assert "expense1" not in recently_processed_expenses
+
+
+# ---------- callback_query_handler action handlers ----------
+
+
+async def test_button_callback_expenses_filter_action(mock_update, mock_context):
+    """Test button_callback handles expenses_filter action."""
+    mock_msg = MagicMock()
+
+    update = Update(
+        1,
+        callback_query=CallbackQuery(
+            "test",
+            from_user=mock_update.effective_user,
+            message=mock_msg,
+            data="action:expenses_filter|type:all",
+            chat_instance="test",
+        ),
+    )
+
+    with patch("util.telegram._send_filtered_expenses") as mock_send, \
+         patch("telegram.CallbackQuery.answer", new_callable=AsyncMock):
+        await button_callback(update, mock_context)
+
+    mock_send.assert_called_once()
+
+
+async def test_button_callback_expenses_pick_category_action(mock_update, mock_context):
+    """Test button_callback handles expenses_pick_category action."""
+    mock_msg = MagicMock()
+    mock_msg.edit_text = AsyncMock()
+
+    update = Update(
+        1,
+        callback_query=CallbackQuery(
+            "test",
+            from_user=mock_update.effective_user,
+            message=mock_msg,
+            data="action:expenses_pick_category",
+            chat_instance="test",
+        ),
+    )
+
+    with patch("util.telegram.CATEGORIES", ["food", "transport"]), \
+         patch("telegram.CallbackQuery.answer", new_callable=AsyncMock):
+        await button_callback(update, mock_context)
+
+    assert mock_msg.edit_text.called

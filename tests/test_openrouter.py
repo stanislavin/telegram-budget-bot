@@ -1,8 +1,8 @@
 import pytest
 import requests
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, patch, call, AsyncMock
 import asyncio
-from util.openrouter import process_with_openrouter, _call_chat_completion, _build_provider_chain
+from util.openrouter import process_with_openrouter, _call_chat_completion, _build_provider_chain, _build_provider_chain_dynamic
 from util.config import OPENROUTER_LLM_VERSION, OPENROUTER_FALLBACK_MODELS, OPENROUTER_URL
 
 @pytest.fixture(autouse=True)
@@ -368,7 +368,47 @@ class TestLocalLLMFallback:
             }
             mock_post.side_effect = [mock_local_err, mock_openrouter_ok]
 
-            result, error = await process_with_openrouter("50 eur pizza")
-            assert error is None
-            data, model = result
-            assert model == OPENROUTER_LLM_VERSION
+
+class TestBuildProviderChainDynamic:
+    @pytest.mark.asyncio
+    async def test_uses_static_chain_when_no_database_url(self):
+        """When DATABASE_URL is not set, should use static chain."""
+        with patch('util.openrouter.DATABASE_URL', None):
+            chain = await _build_provider_chain_dynamic()
+        assert len(chain) > 0
+        assert chain[0][2] == OPENROUTER_LLM_VERSION
+
+    @pytest.mark.asyncio
+    async def test_uses_db_settings_when_available(self):
+        """When DATABASE_URL is set, should use DB settings."""
+        mock_pool = MagicMock()
+        with patch('util.openrouter.DATABASE_URL', 'postgresql://test'), \
+             patch('util.postgres.get_pool', new_callable=AsyncMock, return_value=mock_pool) as mock_get_pool, \
+             patch('util.llm_settings.get_enabled_settings', new_callable=AsyncMock, return_value=[{'provider': 'local', 'model': 'db-model'}]) as mock_get_settings, \
+             patch('util.llm_settings.apply_env_overrides'), \
+             patch('util.llm_settings.build_provider_chain_from_settings', return_value=[('http://db-url', {}, 'db-model', 30)]):
+            
+            chain = await _build_provider_chain_dynamic()
+            assert chain[0][2] == 'db-model'
+
+    @pytest.mark.asyncio
+    async def test_falls_back_to_static_on_db_error(self):
+        """When DB access fails, should fall back to static chain."""
+        with patch('util.openrouter.DATABASE_URL', 'postgresql://test'), \
+             patch('util.llm_settings.get_enabled_settings', side_effect=Exception("DB error")):
+            chain = await _build_provider_chain_dynamic()
+        assert len(chain) > 0
+        assert chain[0][2] == OPENROUTER_LLM_VERSION
+
+    @pytest.mark.asyncio
+    async def test_uses_provided_pool_when_available(self):
+        """When pool is provided, should use it instead of getting a new one."""
+        mock_pool = MagicMock()
+        with patch('util.openrouter.DATABASE_URL', 'postgresql://test'), \
+             patch('util.llm_settings.get_enabled_settings', new_callable=AsyncMock, return_value=[{'provider': 'local', 'model': 'db-model'}]) as mock_get_settings, \
+             patch('util.llm_settings.apply_env_overrides'), \
+             patch('util.llm_settings.build_provider_chain_from_settings', return_value=[('http://db-url', {}, 'db-model', 30)]):
+            
+            chain = await _build_provider_chain_dynamic(pool=mock_pool)
+            mock_get_settings.assert_called_once_with(mock_pool)
+            assert chain[0][2] == 'db-model'

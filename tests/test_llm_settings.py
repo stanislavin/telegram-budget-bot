@@ -7,6 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from util.llm_settings import (
     apply_env_overrides,
     build_provider_chain_from_settings,
+    _ensure_table,
+    _seed_defaults,
+    get_all_settings,
+    get_enabled_settings,
+    upsert_setting,
+    delete_setting,
 )
 
 
@@ -148,3 +154,169 @@ class TestBuildProviderChainFromSettings:
     def test_empty_settings(self):
         chain = build_provider_chain_from_settings([])
         assert chain == []
+
+
+class TestEnsureTable:
+    @pytest.mark.asyncio
+    async def test_creates_table_if_not_exists(self):
+        mock_pool = AsyncMock()
+        with patch("util.llm_settings._TABLE_CREATED", False):
+            await _ensure_table(mock_pool)
+        mock_pool.execute.assert_called_once()
+        call_args = mock_pool.execute.call_args[0][0]
+        assert "CREATE TABLE IF NOT EXISTS llm_settings" in call_args
+
+    @pytest.mark.asyncio
+    async def test_skips_creation_if_already_created(self):
+        mock_pool = AsyncMock()
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            await _ensure_table(mock_pool)
+        mock_pool.execute.assert_not_called()
+
+
+class TestSeedDefaults:
+    @pytest.mark.asyncio
+    async def test_seeds_defaults_when_table_empty(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=0)
+        await _seed_defaults(mock_pool)
+        assert mock_pool.execute.call_count == 4
+
+    @pytest.mark.asyncio
+    async def test_skips_seeding_when_table_not_empty(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=5)
+        await _seed_defaults(mock_pool)
+        mock_pool.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_seeds_correct_default_models(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=0)
+        await _seed_defaults(mock_pool)
+        calls = mock_pool.execute.call_args_list
+        providers = [call[0][1] for call in calls]
+        assert "local" in providers
+        assert "openrouter" in providers
+
+
+class TestGetAllSettings:
+    @pytest.mark.asyncio
+    async def test_returns_all_settings_ordered_by_priority(self):
+        mock_pool = AsyncMock()
+        mock_row1 = MagicMock()
+        mock_row1.__getitem__ = lambda self, key: 1 if key == "id" else ("local" if key == "provider" else None)
+        mock_row1.__iter__ = lambda self: iter(["id", 1, "provider", "local"])
+        mock_row1.keys = lambda: ["id", "provider", "name", "model", "url", "api_key", "timeout", "priority", "enabled"]
+        mock_row2 = MagicMock()
+        mock_row2.__getitem__ = lambda self, key: 2 if key == "id" else ("openrouter" if key == "provider" else None)
+        mock_row2.__iter__ = lambda self: iter(["id", 2, "provider", "openrouter"])
+        mock_row2.keys = lambda: ["id", "provider", "name", "model", "url", "api_key", "timeout", "priority", "enabled"]
+        mock_pool.fetch = AsyncMock(return_value=[mock_row1, mock_row2])
+        
+        with patch("util.llm_settings._TABLE_CREATED", True), \
+             patch("util.llm_settings._seed_defaults", new_callable=AsyncMock):
+            result = await get_all_settings(mock_pool)
+        
+        assert len(result) == 2
+        mock_pool.fetch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_calls_ensure_table_before_fetch(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=0)
+        mock_pool.fetch = AsyncMock(return_value=[])
+        
+        with patch("util.llm_settings._TABLE_CREATED", False):
+            await get_all_settings(mock_pool)
+        
+        assert mock_pool.execute.called
+
+
+class TestGetEnabledSettings:
+    @pytest.mark.asyncio
+    async def test_returns_only_enabled_settings(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=0)
+        mock_row = MagicMock()
+        mock_row.__getitem__ = lambda self, key: True if key == "enabled" else 1
+        mock_row.__iter__ = lambda self: iter(["id", 1, "enabled", True])
+        mock_row.keys = lambda: ["id", "provider", "name", "model", "url", "api_key", "timeout", "priority", "enabled"]
+        mock_pool.fetch = AsyncMock(return_value=[mock_row])
+        
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            result = await get_enabled_settings(mock_pool)
+        
+        assert len(result) == 1
+
+    @pytest.mark.asyncio
+    async def test_orders_by_priority(self):
+        mock_pool = AsyncMock()
+        mock_pool.fetchval = AsyncMock(return_value=0)
+        mock_pool.fetch = AsyncMock(return_value=[])
+        
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            await get_enabled_settings(mock_pool)
+        
+        call_args = mock_pool.fetch.call_args[0][0]
+        assert "WHERE enabled = true ORDER BY priority" in call_args
+
+
+class TestUpsertSetting:
+    @pytest.mark.asyncio
+    async def test_inserts_new_setting(self):
+        mock_pool = AsyncMock()
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            await upsert_setting(mock_pool, "local", "primary", "model-a", "http://test", timeout=60)
+        assert mock_pool.execute.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_updates_existing_setting_on_conflict(self):
+        mock_pool = AsyncMock()
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            await upsert_setting(mock_pool, "openrouter", "primary", "model-b", "http://new")
+        call_args = mock_pool.execute.call_args[0]
+        assert "openrouter" in call_args  # provider in args
+        assert "model-b" in call_args     # model in args
+
+    @pytest.mark.asyncio
+    async def test_sets_default_values(self):
+        mock_pool = AsyncMock()
+        with patch("util.llm_settings._TABLE_CREATED", True):
+            await upsert_setting(mock_pool, "local", "test", "m", "u")
+        call_args = mock_pool.execute.call_args[0]
+        # First arg is SQL, remaining args are values in order: provider, name, model, url, api_key, timeout, priority, enabled
+        values = call_args[1:]  # Skip SQL statement
+        assert values[0] == "local"       # provider
+        assert values[1] == "test"        # name
+        assert values[2] == "m"           # model
+        assert values[3] == "u"           # url
+        assert values[5] == 30            # default timeout
+        assert values[6] == 0             # default priority
+        assert values[7] is True          # default enabled
+
+
+class TestDeleteSetting:
+    @pytest.mark.asyncio
+    async def test_deletes_setting_and_returns_true(self):
+        mock_pool = AsyncMock()
+        mock_pool.execute = AsyncMock(return_value="DELETE 1")
+        result = await delete_setting(mock_pool, 42)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_nothing_deleted(self):
+        mock_pool = AsyncMock()
+        mock_pool.execute = AsyncMock(return_value="DELETE 0")
+        result = await delete_setting(mock_pool, 999)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_calls_ensure_table_before_delete(self):
+        mock_pool = AsyncMock()
+        mock_pool.execute = AsyncMock(return_value="DELETE 1")
+        
+        with patch("util.llm_settings._TABLE_CREATED", False):
+            await delete_setting(mock_pool, 1)
+        
+        assert mock_pool.execute.called
