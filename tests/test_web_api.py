@@ -868,3 +868,128 @@ class TestAnalyze:
                 content_type="application/json",
             )
             assert response.status_code == 500
+
+# ---------- LLM Settings Tests ----------
+
+class TestLLMSettings:
+    def test_get_llm_settings_success(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[
+            {"id": 1, "provider": "local", "name": "primary", "model": "test-model", 
+             "url": "http://test", "api_key": None, "timeout": 30, "priority": 0, "enabled": True},
+            {"id": 2, "provider": "openrouter", "name": "fallback", "model": "fallback-model",
+             "url": "http://test", "api_key": None, "timeout": 30, "priority": 10, "enabled": True},
+        ])
+        response = test_client.get("/api/llm-settings")
+        assert response.status_code == 200
+        data = json.loads(response.data)
+        assert "settings" in data
+        assert "env_overrides" in data
+        assert "effective_chain" in data
+
+    def test_get_llm_settings_db_error(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(side_effect=Exception("DB error"))
+        response = test_client.get("/api/llm-settings")
+        assert response.status_code == 500
+        assert "error" in json.loads(response.data)
+
+    def test_save_llm_setting_success(self, client):
+        test_client, mock_pool = client
+        mock_pool.execute = MagicMock(return_value="INSERT 1")
+        response = test_client.post(
+            "/api/llm-settings",
+            data=json.dumps({
+                "provider": "local",
+                "name": "test",
+                "model": "test-model",
+                "url": "http://test",
+                "timeout": 30,
+                "priority": 0,
+                "enabled": True,
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 200
+        assert json.loads(response.data) == {"ok": True}
+
+    def test_save_llm_setting_missing_fields(self, client):
+        test_client, _ = client
+        response = test_client.post(
+            "/api/llm-settings",
+            data=json.dumps({"provider": "local", "name": "test"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+        assert "required" in json.loads(response.data)["error"]
+
+    def test_save_llm_setting_invalid_timeout(self, client):
+        test_client, _ = client
+        response = test_client.post(
+            "/api/llm-settings",
+            data=json.dumps({
+                "provider": "local",
+                "name": "test",
+                "model": "test-model",
+                "url": "http://test",
+                "timeout": "invalid",
+            }),
+            content_type="application/json",
+        )
+        assert response.status_code == 500
+
+    def test_delete_llm_setting_success(self, client):
+        test_client, mock_pool = client
+
+        def fake_run_delete(coro):
+            import asyncio
+            coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            if '_get_web_pool' in coro_name or '_ensure' in coro_name:
+                return mock_pool
+            if 'delete_setting' in coro_name:
+                return True
+            return mock_pool.fetch()
+
+        with patch("web.api._run", side_effect=fake_run_delete):
+            response = test_client.delete("/api/llm-settings/42")
+        assert response.status_code == 200
+
+    def test_delete_llm_setting_not_found(self, client):
+        test_client, mock_pool = client
+
+        def fake_run_delete(coro):
+            import asyncio
+            coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            if '_get_web_pool' in coro_name or '_ensure' in coro_name:
+                return mock_pool
+            if 'delete_setting' in coro_name:
+                return False
+            return mock_pool.fetch()
+
+        with patch("web.api._run", side_effect=fake_run_delete):
+            response = test_client.delete("/api/llm-settings/999")
+        assert response.status_code == 404
+        assert "not found" in json.loads(response.data)["error"]
+
+    def test_delete_llm_setting_db_error(self, client):
+        test_client, mock_pool = client
+
+        def fake_run_delete(coro):
+            import asyncio
+            coro_name = getattr(coro, '__qualname__', '') or getattr(coro, '__name__', '')
+            if asyncio.iscoroutine(coro):
+                coro.close()
+            if '_get_web_pool' in coro_name or '_ensure' in coro_name:
+                return mock_pool
+            if 'delete_setting' in coro_name:
+                raise Exception("DB error")
+            return mock_pool.fetch()
+
+        with patch("web.api._run", side_effect=fake_run_delete):
+            response = test_client.delete("/api/llm-settings/42")
+        assert response.status_code == 500
+        assert "error" in json.loads(response.data)["error"]
