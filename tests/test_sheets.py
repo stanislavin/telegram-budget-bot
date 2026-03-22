@@ -49,7 +49,7 @@ async def test_save_to_sheets_failure(mock_sheets_service):
     success, error = await save_to_sheets(25.50, 'USD', 'food', 'groceries')
     
     assert success is None
-    assert "API Error" in error
+    assert error is not None and "API Error" in error
 
 
 @pytest.mark.asyncio
@@ -373,7 +373,7 @@ async def test_delete_last_expense_sheet_not_found(mock_sheets_service):
     expense_info, error = await delete_last_expense()
 
     assert expense_info is None
-    assert "not found" in error
+    assert error is not None and isinstance(error, str) and "not found" in error
 
 
 @pytest.mark.asyncio
@@ -385,7 +385,7 @@ async def test_delete_last_expense_exception(mock_sheets_service):
     expense_info, error = await delete_last_expense()
 
     assert expense_info is None
-    assert "API failure" in error
+    assert error is not None and isinstance(error, str) and "API failure" in error
 
 
 # ---------- get_daily_stats edge case tests ----------
@@ -424,7 +424,7 @@ async def test_get_daily_stats_cache_hit(mock_sheets_service):
     util.sheets._daily_stats_cache = {cache_key: expected_result}
     util.sheets._daily_stats_cache_time = _time.monotonic()
 
-    result = await get_daily_stats(target_date)
+    result = await get_daily_stats(target_date)  # type: ignore[arg-type]
 
     assert result == expected_result
     mock_sheets_service.spreadsheets().values().get.assert_not_called()

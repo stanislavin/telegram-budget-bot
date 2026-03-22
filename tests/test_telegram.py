@@ -662,7 +662,7 @@ async def test_sequential_processing_order(
     for u in updates:
         await handle_message(u, mock_context)
 
-    await _drain_chat_queue(99)
+    await _drain_chat_queue(str(99))
 
     assert order == ["expense_0", "expense_1", "expense_2"]
 
@@ -739,7 +739,7 @@ async def test_queue_error_isolation(
     await handle_message(u_bad, mock_context)
     await handle_message(u_good, mock_context)
 
-    await _drain_chat_queue(300)
+    await _drain_chat_queue(str(300))
 
     # Both were attempted — the worker didn't crash
     assert call_count == 2

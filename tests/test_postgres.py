@@ -73,7 +73,7 @@ async def test_save_to_postgres_failure(mock_pg_pool):
     success, error = await pg.save_to_postgres(10, 'EUR', 'transport', 'bus')
 
     assert success is None
-    assert 'DB error' in error
+    assert error is not None and 'DB error' in error
 
 
 # ---------- delete_last_expense_pg ----------
@@ -94,6 +94,7 @@ async def test_delete_last_expense_pg_success(mock_pg_pool):
     expense_info, error = await pg.delete_last_expense_pg()
 
     assert error is None
+    assert expense_info is not None
     assert expense_info['amount'] == '25.5'
     assert expense_info['currency'] == 'USD'
     assert expense_info['category'] == 'food'
@@ -109,7 +110,7 @@ async def test_delete_last_expense_pg_empty_table(mock_pg_pool):
     expense_info, error = await pg.delete_last_expense_pg()
 
     assert expense_info is None
-    assert error == "No expenses to delete."
+    assert error is not None and error == "No expenses to delete."
 
 
 @pytest.mark.asyncio
@@ -120,7 +121,7 @@ async def test_delete_last_expense_pg_error(mock_pg_pool):
     expense_info, error = await pg.delete_last_expense_pg()
 
     assert expense_info is None
-    assert 'Connection lost' in error
+    assert error is not None and 'Connection lost' in error
 
 
 # ---------- get_daily_stats_pg ----------

@@ -1,0 +1,9 @@
+{
+  "reportMissingTypeStubs": false,
+  "reportOptionalMemberAccess": "warning",
+  "reportPossiblyUnboundVariable": "warning",
+  "reportArgumentType": "warning",
+  "reportAttributeAccessIssue": "warning",
+  "reportOptionalSubscript": "warning",
+  "reportGeneralTypeIssues": "warning"
+}

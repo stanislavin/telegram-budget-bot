@@ -43,13 +43,15 @@ async def get_pool() -> asyncpg.Pool:
     """Return the connection pool, creating it lazily on first call."""
     global _pool
     if _pool is None:
-        dsn = _clean_dsn(DATABASE_URL)
-        _pool = await asyncpg.create_pool(dsn, min_size=1, max_size=5)
+        dsn = DATABASE_URL
+        if not dsn:
+            raise RuntimeError("DATABASE_URL is not configured")
+        _pool = await asyncpg.create_pool(_clean_dsn(dsn), min_size=1, max_size=5)
     return _pool
 
 
 @with_retry(max_retries=1, error_message="Error saving to PostgreSQL")
-async def save_to_postgres(amount: float, currency: str, category: str, description: str, spending_type: str = None, planned: bool = True):
+async def save_to_postgres(amount: float, currency: str, category: str, description: str, spending_type: str | None = None, planned: bool = True):
     """Insert a new expense row into PostgreSQL."""
     pool = await get_pool()
     await _ensure_spending_type_column(pool)
@@ -157,7 +159,7 @@ async def get_daily_summary_pg(target_date=None):
         return f"Error fetching daily summary: {e}", None
 
 
-async def get_recent_expenses_pg(days: int = 2, category: str = None, spending_type: str = None):
+async def get_recent_expenses_pg(days: int = 2, category: str | None = None, spending_type: str | None = None) -> str:
     """Fetch expenses from the last N days — mirrors sheets.get_recent_expenses output."""
     try:
         today = datetime.now().date()
@@ -169,15 +171,15 @@ async def get_recent_expenses_pg(days: int = 2, category: str = None, spending_t
         query = """SELECT timestamp, amount, currency, category, description
                FROM expenses
                WHERE DATE(timestamp) >= $1"""
-        params = [start_date]
+        params = [start_date]  # type: ignore[list-item]
         idx = 2
         if category:
             query += f" AND category = ${idx}"
-            params.append(category)
+            params.append(category)  # type: ignore[arg-type]
             idx += 1
         if spending_type:
             query += f" AND spending_type = ${idx}"
-            params.append(spending_type)
+            params.append(spending_type)  # type: ignore[arg-type]
             idx += 1
         query += " ORDER BY timestamp DESC"
 

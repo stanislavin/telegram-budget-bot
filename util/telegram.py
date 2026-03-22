@@ -41,7 +41,7 @@ from util.sheets import (
 from util.openrouter import process_with_openrouter
 
 if DATABASE_URL:
-    from util.postgres import (
+    from util.postgres import (  # type: ignore[import-not-found]
         save_to_postgres,
         delete_last_expense_pg,
         get_daily_stats_pg,
@@ -49,12 +49,17 @@ if DATABASE_URL:
         get_recent_expenses_pg,
     )
 
+    _HAS_PG = True
+else:
+    _HAS_PG = False
+
 from util.message_queue import enqueue_expense, queue_size
 
 
 async def _dual_save(amount, currency, category, description, spending_type=None):
     """Save to Sheets (+ Postgres when configured). Returns Sheets result."""
-    if DATABASE_URL:
+    if _HAS_PG:
+        from util.postgres import save_to_postgres  # type: ignore[import-not-found]
         sheets_coro = save_to_sheets(amount, currency, category, description)
         pg_coro = save_to_postgres(amount, currency, category, description, spending_type=spending_type)
         (sheets_result, pg_result) = await asyncio.gather(
@@ -72,7 +77,8 @@ async def _dual_save(amount, currency, category, description, spending_type=None
 
 async def _dual_delete():
     """Delete from Sheets (+ Postgres when configured). Returns Sheets result."""
-    if DATABASE_URL:
+    if _HAS_PG:
+        from util.postgres import delete_last_expense_pg  # type: ignore[import-not-found]
         sheets_coro = delete_last_expense()
         pg_coro = delete_last_expense_pg()
         (sheets_result, pg_result) = await asyncio.gather(
@@ -213,27 +219,27 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
-    await update.message.reply_text("🔄 Calculating today's expenses...")
-    _get_summary = get_daily_summary_pg if DATABASE_URL else get_daily_summary
+    await update.message.reply_text("🔄 Calculating today's expenses...")  # type: ignore[union-attr]
+    _get_summary = get_daily_summary_pg if _HAS_PG else get_daily_summary  # type: ignore[name-defined]
     summary_text, _ = await _get_summary()
-    await update.message.reply_text(summary_text)
+    await update.message.reply_text(summary_text)  # type: ignore[union-attr]
 
 
 async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Delete the last expense from the sheet."""
-    await update.message.reply_text("🔄 Deleting last expense...")
+    await update.message.reply_text("🔄 Deleting last expense...")  # type: ignore[union-attr]
 
     expense_info, error = await _dual_delete()
 
     if error:
-        await update.message.reply_text(f"❌ {error}")
+        await update.message.reply_text(f"❌ {error}")  # type: ignore[union-attr]
         return
 
-    await update.message.reply_text(
+    await update.message.reply_text(  # type: ignore[union-attr]
         f"🗑️ Deleted last expense:\n"
-        f"Amount: {expense_info['amount']} {expense_info['currency']}\n"
-        f"Category: {expense_info['category']}\n"
-        f"Description: {expense_info['description']}"
+        f"Amount: {expense_info['amount']} {expense_info['currency']}\n"  # type: ignore[index]
+        f"Category: {expense_info['category']}\n"  # type: ignore[index]
+        f"Description: {expense_info['description']}"  # type: ignore[index]
     )
 
 
