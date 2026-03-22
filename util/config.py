@@ -50,12 +50,19 @@ HEALTH_CHECK_HOST = '0.0.0.0'
 DATABASE_URL = os.getenv('DATABASE_URL')
 
 # Git info (captured once at startup)
-try:
-    GIT_COMMIT_SHORT = subprocess.check_output(
-        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
-    ).strip()
-except Exception:
-    GIT_COMMIT_SHORT = "unknown"
+# On Koyeb, KOYEB_GIT_SHA is available at runtime. Locally, fall back to git.
+GIT_COMMIT_SHORT = os.getenv("GIT_COMMIT_SHORT", "").strip()
+if not GIT_COMMIT_SHORT:
+    _koyeb_sha = os.getenv("KOYEB_GIT_SHA", "").strip()
+    if _koyeb_sha:
+        GIT_COMMIT_SHORT = _koyeb_sha[:7]
+    else:
+        try:
+            GIT_COMMIT_SHORT = subprocess.check_output(
+                ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL, text=True
+            ).strip()
+        except Exception:
+            GIT_COMMIT_SHORT = "unknown"
 
 # Prompt Configuration
 _LLM_PROMPT = None
