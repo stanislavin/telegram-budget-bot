@@ -71,7 +71,7 @@ def read_expenses_from_xlsx(filepath: Path) -> list[tuple]:
             continue
 
         try:
-            amount = float(row[1])
+            amount = float(str(row[1]))
         except (TypeError, ValueError):
             continue
 

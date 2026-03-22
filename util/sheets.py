@@ -145,17 +145,17 @@ async def delete_last_expense():
         logger.error(f"Error deleting last expense: {str(e)}")
         return None, str(e)
 
-async def get_daily_stats(target_date: datetime = None):
+async def get_daily_stats(target_date: datetime | None = None) -> tuple[dict, dict]:
     """Get daily spending statistics for a specific date (with short TTL cache)."""
     import time as _time
     global _daily_stats_cache, _daily_stats_cache_time
 
     if target_date is None:
-        target_date = datetime.now().date()
+        target_date = datetime.now().date()  # type: ignore[assignment]
     elif hasattr(target_date, 'date'):
-        target_date = target_date.date()
+        target_date = target_date.date()  # type: ignore[assignment]
 
-    cache_key = target_date.strftime('%Y-%m-%d')
+    cache_key = target_date.strftime('%Y-%m-%d')  # type: ignore[union-attr]
     now = _time.monotonic()
     if cache_key in _daily_stats_cache and (now - _daily_stats_cache_time) < _DAILY_STATS_TTL:
         return _daily_stats_cache[cache_key]
@@ -199,7 +199,7 @@ async def get_daily_stats(target_date: datetime = None):
                         continue
                     
                     # Check if the expense is from the target date
-                    if timestamp.date() == target_date:
+                    if timestamp.date() == target_date:  # type: ignore[union-attr]
                         amount = float(row[1])  # Column B
                         category = row[2]  # Column C
                         currency = row[5]  # Column F
@@ -215,7 +215,7 @@ async def get_daily_stats(target_date: datetime = None):
                             currency_totals[currency] += amount
                         else:
                             currency_totals[currency] = amount
-                            
+                        
                 except (ValueError, IndexError):
                     continue
         
@@ -228,18 +228,18 @@ async def get_daily_stats(target_date: datetime = None):
         logger.error(f"Error fetching daily stats: {str(e)}")
         raise
 
-async def get_daily_summary(target_date: datetime = None):
+async def get_daily_summary(target_date: datetime | None = None) -> tuple[str, None]:
     """Get daily spending summary by category for a specific date."""
     try:
         # Use today if no date provided
         if target_date is None:
-            target_date = datetime.now().date()
+            target_date = datetime.now().date()  # type: ignore[assignment]
         elif hasattr(target_date, 'date'):
-            target_date = target_date.date()
+            target_date = target_date.date()  # type: ignore[assignment]
             
         currency_totals, category_totals = await get_daily_stats(target_date)
         
-        formatted_date = target_date.strftime("%d/%m/%Y")
+        formatted_date = target_date.strftime("%d/%m/%Y")  # type: ignore[union-attr]
         
         if not category_totals:
             logger.info(f"No expenses found for {formatted_date}")
@@ -270,7 +270,7 @@ async def get_daily_summary(target_date: datetime = None):
         logger.error(f"Error fetching daily summary: {str(e)}", exc_info=True)
         return f"Error fetching daily summary: {str(e)}", None
 
-async def get_recent_expenses(days: int = 2, category: str = None, spending_type: str = None):
+async def get_recent_expenses(days: int = 2, category: str | None = None, spending_type: str | None = None) -> str:
     """Fetch expenses from the last N days from Google Sheets."""
     try:
         service = get_google_sheets_service()

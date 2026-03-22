@@ -57,8 +57,10 @@ async def _get_web_pool():
     """Return a connection pool dedicated to the web API, created on _loop."""
     global _web_pool
     if _web_pool is None:
-        dsn = _clean_dsn(DATABASE_URL)
-        _web_pool = await asyncpg.create_pool(dsn, min_size=1, max_size=3)
+        dsn = DATABASE_URL
+        if not dsn:
+            raise RuntimeError("DATABASE_URL is not configured")
+        _web_pool = await asyncpg.create_pool(_clean_dsn(dsn), min_size=1, max_size=3)
     return _web_pool
 
 

@@ -110,8 +110,8 @@ async def test_get_daily_stats_error(mock_get_service):
 # ---------- Dual-write helpers ----------
 
 @pytest.mark.asyncio
-@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
-@patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
+@patch('util.postgres.save_to_postgres', new_callable=AsyncMock)
+@patch('util.telegram._HAS_PG', True)
 @patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
 async def test_dual_save_both_succeed(mock_sheets, mock_pg):
     """Test _dual_save calls both stores when DATABASE_URL is set."""
@@ -126,7 +126,7 @@ async def test_dual_save_both_succeed(mock_sheets, mock_pg):
 
 
 @pytest.mark.asyncio
-@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram._HAS_PG', True)
 @patch('util.telegram.save_to_postgres', new_callable=AsyncMock, create=True)
 @patch('util.telegram.save_to_sheets', new_callable=AsyncMock)
 async def test_dual_save_pg_fails_nonblocking(mock_sheets, mock_pg):
@@ -167,8 +167,8 @@ async def test_dual_save_sheets_exception_propagates(mock_sheets, mock_pg):
 
 
 @pytest.mark.asyncio
-@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
-@patch('util.telegram.delete_last_expense_pg', new_callable=AsyncMock, create=True)
+@patch('util.postgres.delete_last_expense_pg', new_callable=AsyncMock)
+@patch('util.telegram._HAS_PG', True)
 @patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
 async def test_dual_delete_both_succeed(mock_sheets_del, mock_pg_del):
     """Test _dual_delete calls both stores when DATABASE_URL is set."""
@@ -184,7 +184,7 @@ async def test_dual_delete_both_succeed(mock_sheets_del, mock_pg_del):
 
 
 @pytest.mark.asyncio
-@patch('util.telegram.DATABASE_URL', 'postgresql://fake')
+@patch('util.telegram._HAS_PG', True)
 @patch('util.telegram.delete_last_expense_pg', new_callable=AsyncMock, create=True)
 @patch('util.telegram.delete_last_expense', new_callable=AsyncMock)
 async def test_dual_delete_pg_fails_nonblocking(mock_sheets_del, mock_pg_del):

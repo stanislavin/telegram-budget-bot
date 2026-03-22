@@ -146,7 +146,7 @@ async def test_process_with_openrouter_api_error(mock_openrouter_error_response)
     result, error = await process_with_openrouter(message)
     
     assert result is None
-    assert "Error processing with OpenRouter" in error
+    assert error is not None and "Error processing with OpenRouter" in error
     # It tries all 3 models (primary + 2 fallbacks) and then retries the whole process once due to @with_retry
     # Total attempts = (1 primary + 2 fallbacks) * (1 initial + 1 retry) = 6
     assert mock_openrouter_error_response.call_count == 6
@@ -165,10 +165,10 @@ async def test_process_with_openrouter_parsing_error():
         message = "100 rsd food"
         result, error = await process_with_openrouter(message)
         
-        assert result is None
-        assert "Failed to parse OpenRouter response" in error
-        # Parsing error happens after successful HTTP call, so it tries all 3 models and then retries
-        assert mock_post.call_count == 6
+    assert result is None
+    assert error is not None and "Failed to parse OpenRouter response" in error
+    # Parsing error happens after successful HTTP call, so it tries all 3 models and then retries
+    assert mock_post.call_count == 6
 
 @pytest.mark.asyncio
 async def test_process_with_openrouter_fallback_success():
