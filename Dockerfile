@@ -1,22 +1,18 @@
+FROM tailscale/tailscale:latest AS tailscale
+
 FROM python:3.13-slim-bookworm
 
 WORKDIR /app
 
-# Install git, Tailscale, and dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    git \
-    ca-certificates \
-    curl \
-    iptables \
-    && curl -fsSL https://tailscale.com/install.sh | sh \
-    && rm -rf /var/lib/apt/lists/*
+# Copy Tailscale binaries from official image (avoids apt-get)
+COPY --from=tailscale /usr/local/bin/tailscaled /usr/local/bin/tailscaled
+COPY --from=tailscale /usr/local/bin/tailscale /usr/local/bin/tailscale
 
 # Install dependencies first for better layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY .git .git
 COPY bot.py prompt.txt start.sh ./
 RUN chmod +x start.sh
 COPY util/ util/
