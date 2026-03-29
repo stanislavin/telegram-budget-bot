@@ -247,7 +247,7 @@ async def test_button_callback_confirm_success(
     await button_callback(mock_update, mock_context)
 
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi")
+    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
     final_text = calls[1][0][0]
@@ -279,7 +279,7 @@ async def test_button_callback_confirm_failure(
     await button_callback(mock_update, mock_context)
 
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi")
+    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
     calls = mock_update.callback_query.edit_message_text.call_args_list
     assert calls[0][0][0] == "💾 Saving to spreadsheet..."
     assert calls[1][0][0] == "❌ Error saving to spreadsheet: Sheets error"
@@ -403,7 +403,7 @@ async def test_auto_confirm_expense_success(
     await task  # Ensure the task completes
 
     mock_save_to_sheets.assert_called_once_with(
-        30.0, "GBP", "Utilities", "Electricity bill"
+        30.0, "GBP", "Utilities", "Electricity bill", spending_type=None
     )
     mock_status_message.edit_text.assert_called_once()
     call_args = mock_status_message.edit_text.call_args
@@ -435,7 +435,7 @@ async def test_auto_confirm_expense_failure(
     await asyncio.sleep(10.1)
     await task
 
-    mock_save_to_sheets.assert_called_once_with(40.0, "JPY", "Rent", "Monthly rent")
+    mock_save_to_sheets.assert_called_once_with(40.0, "JPY", "Rent", "Monthly rent", spending_type=None)
     mock_status_message.edit_text.assert_called_once_with(
         f"❌ Error auto-saving to spreadsheet: Auto-save error"
     )

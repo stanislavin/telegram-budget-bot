@@ -32,7 +32,7 @@ def get_google_sheets_service():
         raise
 
 @with_retry(max_retries=1, error_message="Error saving to Google Sheets")
-async def save_to_sheets(amount: float, currency: str, category: str, description: str):
+async def save_to_sheets(amount: float, currency: str, category: str, description: str, spending_type: str = None):
     """Save the expense to Google Sheets."""
     service = get_google_sheets_service()
     sheet = service.spreadsheets()
@@ -46,7 +46,7 @@ async def save_to_sheets(amount: float, currency: str, category: str, descriptio
         amount,        # Column B - amount
         category,      # Column C - category
         description,   # Column D - description
-        "",           # Column E - empty
+        spending_type or "",  # Column E - spending type (need/want/wellbeing)
         currency      # Column F - currency
     ]
 
@@ -99,6 +99,7 @@ async def delete_last_expense():
             'currency': last_row[5] if len(last_row) > 5 else '?',
             'category': last_row[2] if len(last_row) > 2 else '?',
             'description': last_row[3] if len(last_row) > 3 else '?',
+            'spending_type': last_row[4] if len(last_row) > 4 else None,
         }
 
         # Get the sheet's internal ID (gid) for the deleteDimension request
