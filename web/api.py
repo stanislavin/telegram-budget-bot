@@ -283,6 +283,8 @@ def get_budget():
     """Return budget plan items grouped by category alongside actual spending."""
     try:
         month = request.args.get("month")
+        compare_month = request.args.get("compare_month")
+
         if not month:
             return jsonify({"error": "month parameter is required"}), 400
 
@@ -300,7 +302,7 @@ def get_budget():
         pool = _run(_get_web_pool())
         _run(_ensure_budget_table(pool))
 
-        # Get plan items
+        # Get plan items for main month
         item_rows = _run(pool.fetch(
             """SELECT id, category, description, amount, due_day
                FROM budget_plan_items WHERE month = $1
@@ -318,6 +320,41 @@ def get_budget():
                 "amount": round(float(r["amount"]), 2),
                 "due_day": r["due_day"],
             })
+
+        # Get plan items for compare month if provided
+        compare_data = None
+        if compare_month:
+            try:
+                compare_dt = datetime.strptime(compare_month, "%Y-%m")
+                compare_dt_from = datetime(compare_dt.year, compare_dt.month, 1)
+                if compare_dt.month == 12:
+                    compare_dt_to = datetime(compare_dt.year + 1, 1, 1)
+                else:
+                    compare_dt_to = datetime(compare_dt.year, compare_dt.month + 1, 1)
+
+                compare_item_rows = _run(pool.fetch(
+                    """SELECT id, category, description, amount, due_day
+                       FROM budget_plan_items WHERE month = $1
+                       ORDER BY category, id""",
+                    compare_dt_from.date(),
+                ))
+
+                compare_items_by_cat = {}
+                for r in compare_item_rows:
+                    cat = r["category"]
+                    compare_items_by_cat.setdefault(cat, []).append({
+                        "id": r["id"],
+                        "description": r["description"],
+                        "amount": round(float(r["amount"]), 2),
+                        "due_day": r["due_day"],
+                    })
+
+                compare_data = {
+                    "month": compare_month,
+                    "items_by_cat": compare_items_by_cat,
+                }
+            except ValueError:
+                pass  # Invalid compare_month, ignore
 
         # Get actual expenses with details (converted to RUB)
         _run(_ensure_spending_type_column(pool))
@@ -370,6 +407,50 @@ def get_budget():
         # Round totals
         actuals = {k: round(v, 2) for k, v in actuals.items()}
 
+        # Get actual expenses for compare month if provided
+        compare_actuals = {}
+        compare_expenses_by_cat = {}
+        if compare_data:
+            compare_expense_rows = _run(pool.fetch("""
+                SELECT e.category, e.timestamp, e.description, e.spending_type,
+                       COALESCE(e.planned, TRUE) AS planned,
+                       e.amount AS orig_amount, e.currency AS orig_currency,
+                       CASE
+                           WHEN e.currency = 'RUB' THEN e.amount
+                           ELSE e.amount * COALESCE(
+                               cr_exact.rate_to_rub,
+                               cr_latest.rate_to_rub,
+                               1
+                           )
+                       END AS converted_amount
+                FROM expenses e
+                LEFT JOIN currency_rates cr_exact
+                    ON cr_exact.currency = e.currency
+                    AND cr_exact.month = DATE_TRUNC('month', e.timestamp)::date
+                LEFT JOIN LATERAL (
+                    SELECT rate_to_rub FROM currency_rates
+                    WHERE currency = e.currency
+                    ORDER BY month DESC LIMIT 1
+                ) cr_latest ON cr_exact.rate_to_rub IS NULL
+                WHERE e.timestamp >= $1 AND e.timestamp < $2
+                ORDER BY e.timestamp DESC
+            """, compare_dt_from, compare_dt_to))
+
+            for r in compare_expense_rows:
+                cat = r["category"]
+                amt = round(float(r["converted_amount"]), 2)
+                compare_actuals[cat] = compare_actuals.get(cat, 0) + amt
+                compare_expenses_by_cat.setdefault(cat, []).append({
+                    "timestamp": r["timestamp"].strftime("%Y-%m-%d %H:%M"),
+                    "description": r["description"] or "",
+                    "amount": amt,
+                    "orig_amount": float(r["orig_amount"]),
+                    "orig_currency": r["orig_currency"],
+                    "spending_type": r["spending_type"],
+                    "planned": r["planned"],
+                })
+            compare_actuals = {k: round(v, 2) for k, v in compare_actuals.items()}
+
         # Merge all categories from both plans and actuals
         all_cats = sorted(set(list(items_by_cat.keys()) + list(actuals.keys())))
         data = []
@@ -420,6 +501,7 @@ def get_budget():
             "total_diff": round(total_planned - total_actual, 2),
             "spending_type_summary": spending_type_summary,
             "planned_summary": planned_summary,
+            "compare_data": compare_data,
         })
     except Exception as e:
         logger.error(f"Error fetching budget: {e}", exc_info=True)
