@@ -432,6 +432,12 @@
     <input type="month" id="budgetMonth">
   </div>
   <div class="control-group">
+    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+      <input type="checkbox" id="comparePreviousMonth" style="width: 18px; height: 18px;">
+      Compare with previous month
+    </label>
+  </div>
+  <div class="control-group">
     <label>Filter by Type</label>
     <div class="spending-type-filter" id="spendingTypeFilter">
       <button data-type="need">Need</button>
@@ -1031,6 +1037,17 @@
 
   function fmt(n) { return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }
 
+  function getPreviousMonth(monthStr) {
+    const [year, month] = monthStr.split('-').map(Number);
+    const date = new Date(year, month - 1, 1);
+    date.setMonth(date.getMonth() - 1);
+    return date.toISOString().slice(0, 7);
+  }
+
+  function sortedSet(arr) {
+    return [...new Set(arr)].sort();
+  }
+
   // --- Budget ---
   let budgetData = null;
   let budgetSpendChart = null;
@@ -1043,7 +1060,11 @@
     budgetLoading.style.display = 'block';
     budgetContent.innerHTML = '';
 
-    fetch('/api/budget?month=' + month)
+    const compareCheckbox = document.getElementById('comparePreviousMonth');
+    const compareMonth = compareCheckbox.checked ? getPreviousMonth(month) : null;
+
+    const url = '/api/budget?month=' + month + (compareMonth ? '&compare_month=' + compareMonth : '');
+    fetch(url)
       .then(r => r.json())
       .then(data => {
         budgetLoading.style.display = 'none';
@@ -1085,8 +1106,17 @@
 
   function renderBudget() {
     const data = budgetData;
+    const compareData = data.compare_data;
     const filtering = activeSpendingTypes.size > 0;
     let html = '';
+
+    // Add compare month header if present
+    if (compareData) {
+      html += '<div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">';
+      html += '<div><strong style="color: #0369a1;">Previous Month: ' + compareData.month + '</strong></div>';
+      html += '<div style="font-size: 0.85rem; color: #64748b;">Compare side-by-side to see trends</div>';
+      html += '</div>';
+    }
 
     // Spending type structure cards
     const sts = data.spending_type_summary || {};
@@ -1255,6 +1285,66 @@
       html += '</div></div></div>';
     });
 
+    // Compare month section
+    if (compareData) {
+      const compareCats = compareData.items_by_cat;
+      const compareActuals = compareData.actuals || {};
+      const compareExpensesByCat = compareData.expenses_by_cat || {};
+
+      // Get all categories from both months
+      const allCompareCats = sortedSet([...Object.keys(compareCats), ...Object.keys(compareActuals)]);
+
+      allCompareCats.forEach(cat => {
+        const items = compareCats[cat] || [];
+        const planned = items.reduce((s, it) => s + it.amount, 0);
+        const actual = compareActuals[cat] || 0;
+        const diff = planned - actual;
+
+        html += '<div class="budget-category">';
+        html += '<div class="budget-cat-header" data-cat="' + cat + '-compare">';
+        html += '<span class="cat-name">' + cat + ' (previous month)</span>';
+        html += '<div class="cat-summary">';
+        html += '<span style="font-weight:600;color:#4f46e5">' + fmt(planned) + '</span>';
+        html += '<span>actual: ' + fmt(actual) + '</span>';
+        html += '<span class="' + diffClass(diff) + '">' + (diff >= 0 ? '+' : '') + fmt(diff) + '</span>';
+        html += '</div></div>';
+
+        html += '<div class="budget-cat-body" data-cat-body="' + cat + '-compare">';
+        html += '<div class="budget-columns">';
+
+        // Left column: planned items
+        html += '<div class="budget-col">';
+        html += '<div class="budget-col-title">Planned</div>';
+        items.forEach((item, ii) => {
+          html += '<div class="budget-item-row">';
+          html += '<input type="text" value="' + (item.description || '').replace(/"/g, '&quot;') + '" placeholder="Description" data-ci="' + cat + '" data-ii="' + ii + '" data-field="description" data-compare="true">';
+          html += '<input type="number" value="' + (item.amount || '') + '" placeholder="0" min="0" step="100" data-ci="' + cat + '" data-ii="' + ii + '" data-field="amount" data-compare="true">';
+          html += '<input type="number" value="' + (item.due_day != null ? item.due_day : '') + '" placeholder="Day" min="1" max="31" data-ci="' + cat + '" data-ii="' + ii + '" data-field="due_day" title="Due day of month (1-31)" data-compare="true">';
+          html += '<button class="budget-item-remove" data-ci="' + cat + '" data-ii="' + ii + '" title="Remove" data-compare="true">&times;</button>';
+          html += '</div>';
+        });
+        html += '</div>';
+
+        // Right column: actual expenses
+        html += '<div class="budget-col">';
+        html += '<div class="budget-col-title">Actual</div>';
+        const expenses = compareExpensesByCat[cat] || [];
+        if (expenses.length) {
+          html += '<table class="budget-actual-table"><thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody>';
+          expenses.forEach(e => {
+            const amtStr = e.orig_currency === 'RUB' ? fmt(e.amount) : fmt(e.amount) + ' (' + e.orig_amount.toFixed(0) + ' ' + e.orig_currency + ')';
+            html += '<tr><td class="date">' + e.timestamp.slice(5, 10) + '</td><td>' + (e.description || '—') + '</td><td class="amt">' + amtStr + '</td></tr>';
+          });
+          html += '</tbody></table>';
+        } else {
+          html += '<div class="budget-actual-empty">No expenses yet</div>';
+        }
+        html += '</div>';
+
+        html += '</div></div></div>';
+      });
+    }
+
     // Add category
     html += '<div class="budget-add-cat">';
     html += '<select id="budgetAddCat"><option value="">Add category...</option></select>';
@@ -1403,18 +1493,43 @@
     // Input changes - update data model in place
     budgetContent.querySelectorAll('.budget-item-row input').forEach(input => {
       input.addEventListener('change', () => {
-        const ci = parseInt(input.dataset.ci);
+        const ci = input.dataset.ci;
         const ii = parseInt(input.dataset.ii);
         const field = input.dataset.field;
-        if (field === 'amount') {
-          budgetData.categories[ci].items[ii].amount = parseFloat(input.value) || 0;
-          recalcBudgetData();
-          renderBudget();
-        } else if (field === 'due_day') {
-          const v = parseInt(input.value);
-          budgetData.categories[ci].items[ii].due_day = (v >= 1 && v <= 31) ? v : null;
+        const isCompare = input.dataset.compare === 'true';
+
+        if (isCompare) {
+          // Handle compare month items
+          const compareData = budgetData.compare_data;
+          if (compareData && compareData.items_by_cat[ci]) {
+            const items = compareData.items_by_cat[ci];
+            if (items[ii]) {
+              if (field === 'amount') {
+                items[ii].amount = parseFloat(input.value) || 0;
+              } else if (field === 'due_day') {
+                const v = parseInt(input.value);
+                items[ii].due_day = (v >= 1 && v <= 31) ? v : null;
+              } else {
+                items[ii].description = input.value;
+              }
+              renderBudget();
+            }
+          }
         } else {
-          budgetData.categories[ci].items[ii].description = input.value;
+          // Handle main month items
+          const catIndex = parseInt(ci);
+          if (budgetData.categories[catIndex] && budgetData.categories[catIndex].items[ii]) {
+            if (field === 'amount') {
+              budgetData.categories[catIndex].items[ii].amount = parseFloat(input.value) || 0;
+              recalcBudgetData();
+              renderBudget();
+            } else if (field === 'due_day') {
+              const v = parseInt(input.value);
+              budgetData.categories[catIndex].items[ii].due_day = (v >= 1 && v <= 31) ? v : null;
+            } else {
+              budgetData.categories[catIndex].items[ii].description = input.value;
+            }
+          }
         }
       });
     });
@@ -1423,31 +1538,29 @@
     budgetContent.querySelectorAll('.budget-item-remove').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
-        const ci = parseInt(btn.dataset.ci);
+        const ci = btn.dataset.ci;
         const ii = parseInt(btn.dataset.ii);
-        budgetOpenCats.add(budgetData.categories[ci].category);
-        budgetData.categories[ci].items.splice(ii, 1);
-        // Remove category if no items and no actual spending
-        if (budgetData.categories[ci].items.length === 0 && budgetData.categories[ci].actual === 0) {
-          budgetData.categories.splice(ci, 1);
-        }
-        recalcBudgetData();
-        renderBudget();
-      });
-    });
+        const isCompare = btn.dataset.compare === 'true';
 
-    // Add item to category
-    budgetContent.querySelectorAll('.budget-add-item button').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const ci = parseInt(btn.dataset.ci);
-        budgetOpenCats.add(budgetData.categories[ci].category);
-        budgetData.categories[ci].items.push({ description: '', amount: 0, due_day: null });
-        recalcBudgetData();
-        renderBudget();
-        // Focus the new description input
-        const rows = budgetContent.querySelectorAll('.budget-item-row input[data-ci="' + ci + '"][data-field="description"]');
-        if (rows.length) rows[rows.length - 1].focus();
+        if (isCompare) {
+          // Handle compare month items
+          const compareData = budgetData.compare_data;
+          if (compareData && compareData.items_by_cat[ci]) {
+            compareData.items_by_cat[ci].splice(ii, 1);
+            renderBudget();
+          }
+        } else {
+          // Handle main month items
+          const catIndex = parseInt(ci);
+          budgetOpenCats.add(budgetData.categories[catIndex].category);
+          budgetData.categories[catIndex].items.splice(ii, 1);
+          // Remove category if no items and no actual spending
+          if (budgetData.categories[catIndex].items.length === 0 && budgetData.categories[catIndex].actual === 0) {
+            budgetData.categories.splice(catIndex, 1);
+          }
+          recalcBudgetData();
+          renderBudget();
+        }
       });
     });
 
