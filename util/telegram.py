@@ -60,7 +60,7 @@ async def _dual_save(amount, currency, category, description, spending_type=None
     """Save to Sheets (+ Postgres when configured). Returns Sheets result."""
     if _HAS_PG:
         from util.postgres import save_to_postgres  # type: ignore[import-not-found]
-        sheets_coro = save_to_sheets(amount, currency, category, description)
+        sheets_coro = save_to_sheets(amount, currency, category, description, spending_type=spending_type)
         pg_coro = save_to_postgres(amount, currency, category, description, spending_type=spending_type)
         (sheets_result, pg_result) = await asyncio.gather(
             sheets_coro, pg_coro, return_exceptions=True
@@ -72,7 +72,7 @@ async def _dual_save(amount, currency, category, description, spending_type=None
         if isinstance(sheets_result, Exception):
             raise sheets_result
         return sheets_result
-    return await save_to_sheets(amount, currency, category, description)
+    return await save_to_sheets(amount, currency, category, description, spending_type=spending_type)
 
 
 async def _dual_delete():
@@ -239,7 +239,8 @@ async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🗑️ Deleted last expense:\n"
         f"Amount: {expense_info['amount']} {expense_info['currency']}\n"  # type: ignore[index]
         f"Category: {expense_info['category']}\n"  # type: ignore[index]
-        f"Description: {expense_info['description']}"  # type: ignore[index]
+        f"Description: {expense_info['description']}\n"  # type: ignore[index]
+        f"Type: {expense_info.get('spending_type', 'N/A')}"  # type: ignore[index]
     )
 
 
@@ -273,10 +274,14 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             # Format totals
             totals_str = format_daily_totals(currency_totals)
 
+            # Add spending type to the message if present
+            spending_type = expense_data.get('spending_type', '')
+            type_line = f"\nType: {spending_type}" if spending_type else ""
+
             joke = random.choice(JOKES)
             final_text = (
                 f"⏱️ Auto-confirmed: {expense_data['amount']} {expense_data['currency']} - "
-                f"{expense_data['category']} - {expense_data['description']}\n\n"
+                f"{expense_data['category']} - {expense_data['description']}{type_line}\n\n"
                 f"💸 Total spent today: {totals_str}\n\n"
                 f"{joke}"
             )
@@ -534,10 +539,14 @@ async def _handle_sheet_retry(query, expense_id):
         currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
+        # Add spending type to the message if present
+        spending_type = expense_data.get('spending_type', '')
+        type_line = f"\nType: {spending_type}" if spending_type else ""
+
         joke = random.choice(JOKES)
         final_text = (
             f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-            f"{expense_data['category']} - {expense_data['description']}\n\n"
+            f"{expense_data['category']} - {expense_data['description']}{type_line}\n\n"
             f"💸 Total spent today: {totals_str}\n\n"
             f"{joke}"
         )
@@ -592,10 +601,14 @@ async def _handle_confirm(query, expense_id, expense_data):
         currency_totals, _ = await _get_stats()
         totals_str = format_daily_totals(currency_totals)
 
+        # Add spending type to the message if present
+        spending_type = expense_data.get('spending_type', '')
+        type_line = f"\nType: {spending_type}" if spending_type else ""
+
         joke = random.choice(JOKES)
         final_text = (
             f"✅ Saved: {expense_data['amount']} {expense_data['currency']} - "
-            f"{expense_data['category']} - {expense_data['description']}\n\n"
+            f"{expense_data['category']} - {expense_data['description']}{type_line}\n\n"
             f"💸 Total spent today: {totals_str}\n\n"
             f"{joke}"
         )

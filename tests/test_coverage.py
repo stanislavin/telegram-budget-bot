@@ -45,9 +45,9 @@ async def test_button_callback_manual_sheet_retry_success(mock_get_daily_stats, 
     context = MagicMock(spec=ContextTypes.DEFAULT_TYPE)
     
     await button_callback(update, context)
-    
+
     update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(100.0, 'RUB', 'Food', 'Lunch')
+    mock_save_to_sheets.assert_called_once_with(100.0, 'RUB', 'Food', 'Lunch', spending_type=None)
     
     calls = update.callback_query.edit_message_text.call_args_list
     assert any("Retrying to save to spreadsheet" in str(c) for c in calls)
@@ -121,7 +121,7 @@ async def test_dual_save_both_succeed(mock_sheets, mock_pg):
     result = await _dual_save(10, 'USD', 'food', 'lunch')
 
     assert result == (True, None)
-    mock_sheets.assert_awaited_once_with(10, 'USD', 'food', 'lunch')
+    mock_sheets.assert_awaited_once_with(10, 'USD', 'food', 'lunch', spending_type=None)
     mock_pg.assert_awaited_once_with(10, 'USD', 'food', 'lunch', spending_type=None)
 
 
