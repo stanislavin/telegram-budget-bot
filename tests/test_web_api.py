@@ -365,7 +365,7 @@ class TestDashboard:
         test_client, _ = client
         response = test_client.get("/")
         assert response.status_code == 200
-        assert b"Expense Trends" in response.data
+        assert b"Budgeter" in response.data
         assert b"chart.js" in response.data.lower() or b"Chart" in response.data
 
     def test_index_uses_month_inputs(self, client):

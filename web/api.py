@@ -1,5 +1,8 @@
 import asyncio
+import calendar
+import hashlib
 import logging
+import random
 from datetime import datetime
 from threading import Thread
 
@@ -33,6 +36,7 @@ _thread.start()
 _web_pool = None
 _spending_type_col_ensured = False
 _planned_col_ensured = False
+_app_settings_table_ensured = False
 
 
 async def _ensure_spending_type_column(pool):
@@ -278,6 +282,159 @@ async def _ensure_budget_table(pool):
         _due_day_col_ensured = True
 
 
+async def _ensure_app_settings_table(pool):
+    global _app_settings_table_ensured
+    if not _app_settings_table_ensured:
+        await pool.execute("""
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
+        _app_settings_table_ensured = True
+
+
+async def _get_demo_mode(pool) -> bool:
+    row = await pool.fetchrow("SELECT value FROM app_settings WHERE key = 'demo_mode'")
+    return row is not None and row["value"] == "true"
+
+
+def _generate_demo_budget(month: str, include_compare: bool = True) -> dict:
+    """Generate a fully synthetic budget response for demo mode."""
+    seed = int(hashlib.md5(month.encode()).hexdigest(), 16) % (2 ** 32)
+    rng = random.Random(seed)
+
+    dt = datetime.strptime(month, "%Y-%m")
+    days_in_month = calendar.monthrange(dt.year, dt.month)[1]
+    today = datetime.now()
+    is_current = (dt.year == today.year and dt.month == today.month)
+    active_days = today.day if is_current else days_in_month
+
+    cfg = [
+        ("Housing",       "need",      [("Rent", 35000, 1), ("Electricity", 3000, 25), ("Internet", 900, 15)]),
+        ("Food",          "need",      [("Groceries", 18000, None), ("Restaurants", 7000, None)]),
+        ("Transport",     "need",      [("Public transit", 2200, None), ("Taxi", 3500, None)]),
+        ("Health",        "wellbeing", [("Gym", 3500, 1), ("Pharmacy", 1500, None)]),
+        ("Entertainment", "want",      [("Streaming", 900, 10), ("Leisure", 4500, None)]),
+        ("Clothing",      "want",      [("Clothing", 5000, None)]),
+        ("Savings",       "invest",    [("Emergency fund", 10000, 1), ("Investments", 5000, 1)]),
+    ]
+
+    categories = []
+    st_totals: dict = {}
+
+    for cat_name, stype, items_cfg in cfg:
+        items = []
+        for desc, base, due_day in items_cfg:
+            amount = round(base * rng.uniform(0.9, 1.1) / 500) * 500
+            items.append({"id": rng.randint(1000, 9999), "description": desc,
+                          "amount": float(amount), "due_day": due_day})
+
+        planned = sum(it["amount"] for it in items)
+        ratio = rng.uniform(0.65, 1.10) * (active_days / days_in_month)
+        target = planned * ratio
+
+        n = rng.randint(3, 8)
+        weights = [rng.random() for _ in range(n)]
+        total_w = sum(weights)
+        expenses = []
+        for w in weights:
+            amt = max(100.0, round(target * w / total_w / 100) * 100)
+            day = rng.randint(1, active_days)
+            ts = f"{dt.year:04d}-{dt.month:02d}-{day:02d} {rng.randint(8, 22):02d}:{rng.randint(0, 59):02d}"
+            expenses.append({
+                "timestamp": ts,
+                "description": rng.choice(items_cfg)[0],
+                "amount": float(amt),
+                "orig_amount": float(amt),
+                "orig_currency": "RUB",
+                "spending_type": stype,
+                "planned": True,
+            })
+
+        expenses.sort(key=lambda e: e["timestamp"])
+        actual = round(sum(e["amount"] for e in expenses), 2)
+        st_totals[stype] = st_totals.get(stype, 0) + actual
+
+        categories.append({
+            "category": cat_name, "items": items, "expenses": expenses,
+            "planned": round(planned, 2), "actual": actual,
+            "diff": round(planned - actual, 2),
+        })
+
+    total_planned = round(sum(c["planned"] for c in categories), 2)
+    total_actual = round(sum(c["actual"] for c in categories), 2)
+
+    st_sum = sum(st_totals.values()) or 1
+    spending_type_summary = {
+        st: {"amount": round(st_totals.get(st, 0), 2),
+             "percentage": round(st_totals.get(st, 0) / st_sum * 100, 1)}
+        for st in ("need", "want", "invest", "wellbeing")
+    }
+
+    p_exp = round(sum(e["amount"] for c in categories for e in c["expenses"]), 2)
+    planned_summary = {
+        "planned": {"amount": p_exp, "percentage": 100.0},
+        "unplanned": {"amount": 0.0, "percentage": 0.0},
+    }
+
+    if dt.month == 1:
+        prev_dt = datetime(dt.year - 1, 12, 1)
+    else:
+        prev_dt = datetime(dt.year, dt.month - 1, 1)
+    prev_month = prev_dt.strftime("%Y-%m")
+
+    if include_compare:
+        prev = _generate_demo_budget(prev_month, include_compare=False)
+        compare_data = {
+            "month": prev_month,
+            "items_by_cat": {c["category"]: c["items"] for c in prev["categories"]},
+            "actuals": {c["category"]: c["actual"] for c in prev["categories"]},
+            "expenses_by_cat": {c["category"]: c["expenses"] for c in prev["categories"]},
+        }
+    else:
+        compare_data = {"month": prev_month, "items_by_cat": {}, "actuals": {}, "expenses_by_cat": {}}
+
+    return {
+        "month": month, "categories": categories,
+        "total_planned": total_planned, "total_actual": total_actual,
+        "total_diff": round(total_planned - total_actual, 2),
+        "spending_type_summary": spending_type_summary,
+        "planned_summary": planned_summary,
+        "compare_data": compare_data,
+    }
+
+
+@api_bp.route("/api/demo-mode")
+def get_demo_mode():
+    try:
+        pool = _run(_get_web_pool())
+        _run(_ensure_app_settings_table(pool))
+        demo = _run(_get_demo_mode(pool))
+        return jsonify({"demo": demo})
+    except Exception as e:
+        logger.error(f"Error getting demo mode: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@api_bp.route("/api/demo-mode", methods=["POST"])
+def set_demo_mode():
+    try:
+        body = request.get_json() or {}
+        demo = bool(body.get("demo", False))
+        pool = _run(_get_web_pool())
+        _run(_ensure_app_settings_table(pool))
+        _run(pool.execute(
+            "INSERT INTO app_settings (key, value) VALUES ('demo_mode', $1) "
+            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+            "true" if demo else "false",
+        ))
+        return jsonify({"demo": demo})
+    except Exception as e:
+        logger.error(f"Error setting demo mode: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/budget", methods=["GET"])
 def get_budget():
     """Return budget plan items grouped by category alongside actual spending."""
@@ -288,17 +445,22 @@ def get_budget():
             return jsonify({"error": "month parameter is required"}), 400
 
         try:
-            dt = datetime.strptime(month, "%Y-%m")
+            datetime.strptime(month, "%Y-%m")
         except ValueError:
             return jsonify({"error": "month must be YYYY-MM"}), 400
 
+        pool = _run(_get_web_pool())
+        _run(_ensure_app_settings_table(pool))
+        if _run(_get_demo_mode(pool)):
+            return jsonify(_generate_demo_budget(month))
+
+        dt = datetime.strptime(month, "%Y-%m")
         dt_from = datetime(dt.year, dt.month, 1)
         if dt.month == 12:
             dt_to = datetime(dt.year + 1, 1, 1)
         else:
             dt_to = datetime(dt.year, dt.month + 1, 1)
 
-        pool = _run(_get_web_pool())
         _run(_ensure_budget_table(pool))
 
         # Get plan items for main month
@@ -526,6 +688,9 @@ def save_budget():
         month_date = datetime(dt.year, dt.month, 1).date()
 
         pool = _run(_get_web_pool())
+        _run(_ensure_app_settings_table(pool))
+        if _run(_get_demo_mode(pool)):
+            return jsonify({"error": "Demo mode is active — saving is disabled"}), 403
         _run(_ensure_budget_table(pool))
 
         # Delete all existing items for this month, then insert new ones
