@@ -1,0 +1,24 @@
+#!/bin/sh
+# Run tests before committing to main branch.
+# Install: scripts/install-hooks.sh
+
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" != "main" ]; then
+  exit 0
+fi
+
+echo "On main — running tests before commit..."
+
+if [ -f ".venv/bin/activate" ]; then
+  . .venv/bin/activate
+fi
+
+python -m pytest tests/ -q --tb=short
+status=$?
+
+if [ $status -ne 0 ]; then
+  echo ""
+  echo "Tests failed. Commit aborted. Fix the failures or commit on a feature branch."
+fi
+
+exit $status
