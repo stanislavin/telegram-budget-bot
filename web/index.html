@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Expense Trends</title>
+<title>Budgeter</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3"></script>
@@ -379,8 +379,11 @@
 </head>
 <body>
 <div style="display:flex;justify-content:space-between;align-items:baseline">
-<h1>Expense Trends</h1>
+<h1>Budgeter</h1>
 <span id="versionHash" style="font-size:0.7rem;color:#bbb;font-family:monospace"></span>
+</div>
+<div id="demoBanner" style="display:none;background:#fef3c7;border:1px solid #d97706;border-radius:8px;padding:10px 16px;margin-bottom:12px;color:#92400e;font-weight:600;">
+  🎭 Demo Mode — showing synthetic data. Your real data is untouched.
 </div>
 <div class="tabs">
   <button class="tab active" id="tabBudget">Budget</button>
@@ -707,6 +710,9 @@
   fetch('/api/version').then(r => r.json()).then(d => {
     document.getElementById('versionHash').textContent = d.commit || '';
   }).catch(() => {});
+
+  // Load demo mode status on startup
+  fetchDemoMode();
 
   // Load categories
   fetch('/api/categories')
@@ -1038,6 +1044,21 @@
   });
 
   function fmt(n) { return n.toLocaleString(undefined, { maximumFractionDigits: 0 }); }
+
+  // --- Demo mode ---
+  let demoModeActive = false;
+
+  function applyDemoMode(demo) {
+    demoModeActive = demo;
+    document.getElementById('demoBanner').style.display = demo ? 'block' : 'none';
+  }
+
+  function fetchDemoMode() {
+    return fetch('/api/demo-mode')
+      .then(r => r.json())
+      .then(d => applyDemoMode(d.demo || false))
+      .catch(() => {});
+  }
 
   // --- Budget ---
   let budgetData = null;
@@ -1932,7 +1953,19 @@
 
   function renderLLMSettings(data) {
     const { settings, env_overrides, effective_chain } = data;
-    let html = '<div class="admin-section"><h2>LLM Provider Settings</h2>';
+    let html = '';
+
+    // Demo mode section
+    html += '<div class="admin-section">';
+    html += '<h2>Demo Mode</h2>';
+    html += '<div style="display:flex;align-items:center;gap:16px;">';
+    html += `<label style="cursor:pointer;display:flex;align-items:center;gap:8px;font-size:0.95rem;">`;
+    html += `<input type="checkbox" id="demoModeToggle" style="width:18px;height:18px;" ${demoModeActive ? 'checked' : ''}>`;
+    html += ` Enable demo mode</label>`;
+    html += '<span style="font-size:0.85rem;color:#666;">Fills budget with synthetic data for a full year. Real data is never modified.</span>';
+    html += '</div></div>';
+
+    html += '<div class="admin-section"><h2>LLM Provider Settings</h2>';
 
     // Cards for each setting
     settings.forEach(s => {
@@ -2126,6 +2159,24 @@
         fetchLLMSettings();
       })
       .catch(err => alert('Error adding: ' + err.message));
+  });
+
+  // Demo mode toggle
+  document.addEventListener('change', e => {
+    if (e.target.id !== 'demoModeToggle') return;
+    const demo = e.target.checked;
+    fetch('/api/demo-mode', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({demo}),
+    })
+      .then(r => r.json())
+      .then(d => {
+        if (d.error) { alert('Error: ' + d.error); return; }
+        applyDemoMode(d.demo);
+        if (budgetData) fetchBudget();
+      })
+      .catch(err => alert('Error toggling demo mode: ' + err.message));
   });
 
 })();
