@@ -127,8 +127,8 @@
   .budget-cat-header .cat-summary { display: flex; gap: 16px; font-size: 0.85rem; align-items: center; }
   .budget-cat-body { display: none; border-top: 1px solid #e5e5e5; }
   .budget-cat-body.open { display: block; }
-  .budget-columns { display: flex; gap: 0; min-height: 100px; }
-  .budget-col { flex: 1; padding: 8px 16px 12px; }
+  .budget-columns { display: flex; gap: 0; align-items: stretch; }
+  .budget-col { flex: 1; padding: 8px 16px 12px; display: flex; flex-direction: column; }
   .budget-col + .budget-col { border-left: 1px solid #e5e5e5; }
   .budget-col-title { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: #666; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #f0f0f0; }
   .budget-col-prev .budget-col-title { color: #aaa; }
@@ -137,7 +137,7 @@
   .budget-col-prev .budget-actual-table td { color: #aaa; border-bottom-color: #f5f5f5; }
   .budget-col-prev .budget-actual-table .amt { color: #aaa; }
   .budget-col-prev .budget-actual-empty { color: #ccc; }
-  .budget-col-total { margin-top: 8px; padding-top: 6px; border-top: 1px solid #e5e5e5; font-size: 0.8rem; font-weight: 600; color: #555; text-align: right; }
+  .budget-col-total { margin-top: auto; padding-top: 6px; border-top: 1px solid #e5e5e5; font-size: 0.8rem; font-weight: 600; color: #555; text-align: right; }
   .budget-col-prev .budget-col-total { color: #aaa; }
   .budget-actual-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
   .budget-actual-table th { text-align: left; padding: 4px 6px; color: #999; font-weight: 600; font-size: 0.75rem; border-bottom: 1px solid #f0f0f0; }
@@ -1253,39 +1253,7 @@
       html += '<div class="budget-cat-body' + (isOpen ? ' open' : '') + '" data-cat-body="' + cat.category + '">';
       html += '<div class="budget-columns">';
 
-      // Column 1: planned items
-      html += '<div class="budget-col">';
-      html += '<div class="budget-col-title">Planned</div>';
-      cat.items.forEach((item, ii) => {
-        html += '<div class="budget-item-row">';
-        html += '<input type="text" value="' + (item.description || '').replace(/"/g, '&quot;') + '" placeholder="Description" data-ci="' + ci + '" data-ii="' + ii + '" data-field="description">';
-        html += '<input type="number" value="' + (item.amount || '') + '" placeholder="0" min="0" step="100" data-ci="' + ci + '" data-ii="' + ii + '" data-field="amount">';
-        html += '<input type="number" value="' + (item.due_day != null ? item.due_day : '') + '" placeholder="Day" min="1" max="31" data-ci="' + ci + '" data-ii="' + ii + '" data-field="due_day" title="Due day of month (1-31)">';
-        html += '<button class="budget-item-remove" data-ci="' + ci + '" data-ii="' + ii + '" title="Remove">&times;</button>';
-        html += '</div>';
-      });
-      html += '<div class="budget-add-item"><button data-ci="' + ci + '">+ Add expense</button></div>';
-      html += '<div class="budget-col-total">' + fmt(cat.planned) + ' RUB</div>';
-      html += '</div>';
-
-      // Column 2: actual expenses
-      html += '<div class="budget-col">';
-      html += '<div class="budget-col-title">Actual</div>';
-      const expenses = filtering ? filteredExpenses : (cat.expenses || []);
-      if (expenses.length) {
-        html += '<table class="budget-actual-table"><thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody>';
-        expenses.forEach(e => {
-          const amtStr = e.orig_currency === 'RUB' ? fmt(e.amount) : fmt(e.amount) + ' (' + e.orig_amount.toFixed(0) + ' ' + e.orig_currency + ')';
-          html += '<tr><td class="date">' + e.timestamp.slice(5, 10) + '</td><td>' + (e.description || '—') + '</td><td class="amt">' + amtStr + '</td></tr>';
-        });
-        html += '</tbody></table>';
-      } else {
-        html += '<div class="budget-actual-empty">No expenses yet</div>';
-      }
-      html += '<div class="budget-col-total">' + fmt(catActual) + ' RUB</div>';
-      html += '</div>';
-
-      // Column 3: previous month actuals (read-only, gray)
+      // Column 1: previous month actuals (read-only, gray)
       const prevExpenses = compareData ? (compareData.expenses_by_cat[cat.category] || []) : [];
       const prevTotal = prevExpenses.reduce((s, e) => s + e.amount, 0);
       html += '<div class="budget-col budget-col-prev">';
@@ -1301,6 +1269,38 @@
         html += '<div class="budget-actual-empty">No expenses</div>';
       }
       html += '<div class="budget-col-total">' + fmt(prevTotal) + ' RUB</div>';
+      html += '</div>';
+
+      // Column 2: planned items
+      html += '<div class="budget-col">';
+      html += '<div class="budget-col-title">Planned</div>';
+      cat.items.forEach((item, ii) => {
+        html += '<div class="budget-item-row">';
+        html += '<input type="text" value="' + (item.description || '').replace(/"/g, '&quot;') + '" placeholder="Description" data-ci="' + ci + '" data-ii="' + ii + '" data-field="description">';
+        html += '<input type="number" value="' + (item.amount || '') + '" placeholder="0" min="0" step="100" data-ci="' + ci + '" data-ii="' + ii + '" data-field="amount">';
+        html += '<input type="number" value="' + (item.due_day != null ? item.due_day : '') + '" placeholder="Day" min="1" max="31" data-ci="' + ci + '" data-ii="' + ii + '" data-field="due_day" title="Due day of month (1-31)">';
+        html += '<button class="budget-item-remove" data-ci="' + ci + '" data-ii="' + ii + '" title="Remove">&times;</button>';
+        html += '</div>';
+      });
+      html += '<div class="budget-add-item"><button data-ci="' + ci + '">+ Add expense</button></div>';
+      html += '<div class="budget-col-total">' + fmt(cat.planned) + ' RUB</div>';
+      html += '</div>';
+
+      // Column 3: actual expenses
+      html += '<div class="budget-col">';
+      html += '<div class="budget-col-title">Actual</div>';
+      const expenses = filtering ? filteredExpenses : (cat.expenses || []);
+      if (expenses.length) {
+        html += '<table class="budget-actual-table"><thead><tr><th>Date</th><th>Description</th><th class="amt">Amount</th></tr></thead><tbody>';
+        expenses.forEach(e => {
+          const amtStr = e.orig_currency === 'RUB' ? fmt(e.amount) : fmt(e.amount) + ' (' + e.orig_amount.toFixed(0) + ' ' + e.orig_currency + ')';
+          html += '<tr><td class="date">' + e.timestamp.slice(5, 10) + '</td><td>' + (e.description || '—') + '</td><td class="amt">' + amtStr + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      } else {
+        html += '<div class="budget-actual-empty">No expenses yet</div>';
+      }
+      html += '<div class="budget-col-total">' + fmt(catActual) + ' RUB</div>';
       html += '</div>';
 
       html += '</div></div></div>';
