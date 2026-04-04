@@ -1015,6 +1015,7 @@
   });
 
   budgetMonthEl.addEventListener('change', fetchBudget);
+  document.getElementById('comparePreviousMonth').addEventListener('change', fetchBudget);
   editExpensesMonthEl.addEventListener('change', fetchEditExpenses);
   editExpensesCatFilter.addEventListener('change', renderFilteredExpenses);
   editExpensesTypeFilter.addEventListener('change', renderFilteredExpenses);
@@ -1572,6 +1573,18 @@
       budgetOpenCats.add(cat);
       recalcBudgetData();
       renderBudget();
+    });
+
+    // Add item to category
+    budgetContent.querySelectorAll('.budget-add-item button').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const ci = parseInt(btn.dataset.ci);
+        budgetOpenCats.add(budgetData.categories[ci].category);
+        budgetData.categories[ci].items.push({ description: '', amount: 0, due_day: null });
+        recalcBudgetData();
+        renderBudget();
+      });
     });
 
     // Save
