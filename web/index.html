@@ -375,6 +375,78 @@
   .admin-add-form.open { display: block; }
   .admin-add-form h3 { font-size: 0.9rem; margin-bottom: 12px; }
   .admin-add-actions { display: flex; gap: 8px; margin-top: 12px; }
+
+  /* ===== MOBILE RESPONSIVE ===== */
+  @media (max-width: 640px) {
+    body { padding: 12px; }
+    h1 { font-size: 1.2rem; margin-bottom: 12px; }
+
+    /* Tabs: hide scrollbar but allow horizontal scroll */
+    .tabs { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 10px 14px; font-size: 0.85rem; white-space: nowrap; }
+
+    /* Reduce chart-container padding */
+    .chart-container { padding: 12px; }
+
+    /* Budget 3-column layout → single column */
+    .budget-columns { flex-direction: column; }
+    .budget-col + .budget-col { border-left: none; border-top: 1px solid #e5e5e5; }
+
+    /* Budget category header: allow wrapping */
+    .budget-cat-header { flex-wrap: wrap; gap: 6px; padding: 10px 12px; }
+    .budget-cat-header .cat-summary { gap: 8px; font-size: 0.8rem; flex-wrap: wrap; }
+
+    /* Narrower number inputs in budget item rows */
+    .budget-item-row input[type="number"] { width: 80px; }
+    .budget-item-row input[data-field="due_day"] { width: 42px; }
+
+    /* Spending type filter: wrap buttons, no left margin */
+    .spending-type-filter { flex-wrap: wrap; margin-left: 0; }
+    .spending-type-filter button { padding: 5px 10px; font-size: 0.75rem; }
+
+    /* Tables: horizontal scroll */
+    .expenses-panel { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #editExpensesContent { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* Spending type cards: 2-column grid */
+    .spending-type-cards { gap: 8px; }
+    .spending-type-card { min-width: calc(50% - 4px); flex: 1 1 calc(50% - 4px); }
+
+    /* Summary/totals cards: 2 per row */
+    .budget-totals { gap: 8px; }
+    .budget-totals .summary-card { min-width: calc(50% - 4px); flex: 1 1 calc(50% - 4px); }
+
+    /* Budget actions: stack/wrap */
+    .budget-actions { flex-wrap: wrap; gap: 8px; }
+    .budget-actions button { flex: 1; min-width: 140px; }
+
+    /* Analyze overlay: compact, stack input row */
+    .analyze-overlay { padding: 40px 12px 12px; }
+    .analyze-input-row { flex-direction: column; }
+    .analyze-send { width: 100%; }
+
+    /* Admin fields: stack label above input */
+    .admin-field { flex-direction: column; gap: 4px; }
+    .admin-field label { min-width: unset; text-align: left; }
+    .admin-field input[type="number"] { width: 100%; }
+
+    /* Admin chain items: allow wrapping */
+    .chain-item { flex-wrap: wrap; gap: 6px; }
+    .chain-item .chain-url { word-break: break-all; }
+
+    /* Controls: reduce gap */
+    .controls { gap: 8px; }
+
+    /* Planned bar labels: smaller, allow wrap */
+    .planned-bar-labels { flex-wrap: wrap; gap: 4px; font-size: 0.75rem; }
+  }
+
+  @media (max-width: 380px) {
+    .tab { padding: 10px 10px; font-size: 0.8rem; }
+    .spending-type-card { min-width: 100%; flex: 1 1 100%; }
+    .budget-totals .summary-card { min-width: 100%; flex: 1 1 100%; }
+  }
 </style>
 </head>
 <body>
