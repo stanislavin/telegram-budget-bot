@@ -430,6 +430,10 @@
     .budget-item-row input[type="number"] { width: 80px; }
     .budget-item-row input[data-field="due_day"] { width: 42px; }
 
+    /* Wrap budget planned rows: description full-width, controls on next line */
+    .budget-item-row { flex-wrap: wrap; gap: 6px 8px; }
+    .budget-item-row input[type="text"] { flex-basis: 100%; }
+
     /* Spending type filter: wrap buttons, no left margin */
     .spending-type-filter { flex-wrap: wrap; margin-left: 0; }
     .spending-type-filter button { padding: 5px 10px; font-size: 0.75rem; }
