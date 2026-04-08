@@ -376,6 +376,19 @@
   .admin-add-form h3 { font-size: 0.9rem; margin-bottom: 12px; }
   .admin-add-actions { display: flex; gap: 8px; margin-top: 12px; }
 
+  /* Expense cards (mobile layout) */
+  .expense-cards { }
+  .expense-card { padding: 10px 0; border-bottom: 1px solid #f0f0f0; }
+  .expense-card:last-child { border-bottom: none; }
+  .expense-card-top { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+  .expense-card-date { font-size: 0.8rem; color: #999; }
+  .expense-card-amount { font-size: 0.9rem; font-weight: 700; white-space: nowrap; margin-left: 8px; }
+  .expense-card-desc { font-size: 0.9rem; color: #333; margin-bottom: 6px; }
+  .expense-card-controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .expense-card-controls select { padding: 5px 8px; border: 1px solid #ddd; border-radius: 4px; font-size: 0.85rem; background: #fff; cursor: pointer; max-width: 130px; }
+  .expense-card-controls select:focus { outline: none; border-color: #4f46e5; }
+  .expense-card-controls select.changed { border-color: #4f46e5; background: #f5f5ff; font-weight: 600; }
+
   /* ===== MOBILE RESPONSIVE ===== */
   @media (max-width: 640px) {
     body { padding: 12px; }
@@ -1742,43 +1755,71 @@
     html += '<span style="font-weight:700;color:#4f46e5">' + totalStr + '</span>';
     html += '</div>';
 
-    html += '<table class="edit-expenses-table"><thead><tr>';
-    html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th><th>Planned</th><th></th>';
-    html += '</tr></thead><tbody>';
-
-    data.forEach(exp => {
-      html += '<tr data-row-id="' + exp.id + '">';
-      html += '<td>' + exp.timestamp + '</td>';
-      html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
-      html += '<td>' + (exp.description || '') + '</td>';
-      html += '<td>';
-      html += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '" data-field="category">';
-      allCategories.forEach(cat => {
-        html += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
-      });
-      html += '</select>';
-      html += '<span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span>';
-      html += '</td>';
-      html += '<td>';
-      html += '<select data-id="' + exp.id + '" data-orig="' + (exp.spending_type || '') + '" data-field="spending_type">';
-      html += '<option value=""' + (!exp.spending_type ? ' selected' : '') + '>—</option>';
-      spendingTypes.forEach(st => {
-        html += '<option value="' + st + '"' + (st === exp.spending_type ? ' selected' : '') + '>' + st + '</option>';
-      });
-      html += '</select>';
-      html += '<span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span>';
-      html += '</td>';
-      html += '<td>';
+    function expenseRowControls(exp) {
       const isPlanned = exp.planned !== false;
-      html += '<span class="planned-toggle" data-id="' + exp.id + '" data-planned="' + isPlanned + '">';
-      html += '<span class="planned-icon">' + (isPlanned ? '✓' : '✗') + '</span>';
-      html += '</span>';
-      html += '</td>';
-      html += '<td><button class="expense-delete" data-id="' + exp.id + '" title="Delete">&times;</button></td>';
-      html += '</tr>';
-    });
+      let s = '';
+      s += '<select data-id="' + exp.id + '" data-orig="' + exp.category + '" data-field="category">';
+      allCategories.forEach(cat => {
+        s += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
+      });
+      s += '</select>';
+      s += '<span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span>';
+      s += '<select data-id="' + exp.id + '" data-orig="' + (exp.spending_type || '') + '" data-field="spending_type">';
+      s += '<option value=""' + (!exp.spending_type ? ' selected' : '') + '>—</option>';
+      spendingTypes.forEach(st => {
+        s += '<option value="' + st + '"' + (st === exp.spending_type ? ' selected' : '') + '>' + st + '</option>';
+      });
+      s += '</select>';
+      s += '<span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span>';
+      s += '<span class="planned-toggle" data-id="' + exp.id + '" data-planned="' + isPlanned + '">';
+      s += '<span class="planned-icon">' + (isPlanned ? '✓' : '✗') + '</span></span>';
+      s += '<button class="expense-delete" data-id="' + exp.id + '" title="Delete">&times;</button>';
+      return s;
+    }
 
-    html += '</tbody></table>';
+    if (window.innerWidth < 640) {
+      // Card layout for mobile
+      html += '<div class="expense-cards">';
+      data.forEach(exp => {
+        html += '<div class="expense-card" data-row-id="' + exp.id + '">';
+        html += '<div class="expense-card-top">';
+        html += '<span class="expense-card-date">' + exp.timestamp + '</span>';
+        html += '<span class="expense-card-amount">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</span>';
+        html += '</div>';
+        if (exp.description) html += '<div class="expense-card-desc">' + exp.description + '</div>';
+        html += '<div class="expense-card-controls">' + expenseRowControls(exp) + '</div>';
+        html += '</div>';
+      });
+      html += '</div>';
+    } else {
+      // Table layout for desktop
+      html += '<table class="edit-expenses-table"><thead><tr>';
+      html += '<th>Date</th><th>Amount</th><th>Description</th><th>Category</th><th>Type</th><th>Planned</th><th></th>';
+      html += '</tr></thead><tbody>';
+      data.forEach(exp => {
+        const isPlanned = exp.planned !== false;
+        html += '<tr data-row-id="' + exp.id + '">';
+        html += '<td>' + exp.timestamp + '</td>';
+        html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
+        html += '<td>' + (exp.description || '') + '</td>';
+        html += '<td><select data-id="' + exp.id + '" data-orig="' + exp.category + '" data-field="category">';
+        allCategories.forEach(cat => {
+          html += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
+        });
+        html += '</select><span class="cat-save-ok" id="save-ok-' + exp.id + '">saved</span></td>';
+        html += '<td><select data-id="' + exp.id + '" data-orig="' + (exp.spending_type || '') + '" data-field="spending_type">';
+        html += '<option value=""' + (!exp.spending_type ? ' selected' : '') + '>—</option>';
+        spendingTypes.forEach(st => {
+          html += '<option value="' + st + '"' + (st === exp.spending_type ? ' selected' : '') + '>' + st + '</option>';
+        });
+        html += '</select><span class="type-save-ok" id="type-save-ok-' + exp.id + '">saved</span></td>';
+        html += '<td><span class="planned-toggle" data-id="' + exp.id + '" data-planned="' + isPlanned + '">';
+        html += '<span class="planned-icon">' + (isPlanned ? '✓' : '✗') + '</span></span></td>';
+        html += '<td><button class="expense-delete" data-id="' + exp.id + '" title="Delete">&times;</button></td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+    }
     editExpensesContent.innerHTML = html;
 
     // Attach change handlers for category
