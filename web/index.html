@@ -308,6 +308,22 @@
 
   .type-save-ok { color: #059669; font-size: 0.8rem; margin-left: 6px; opacity: 0; transition: opacity 0.3s; }
   .type-save-ok.show { opacity: 1; }
+  .desc-save-ok { color: #059669; font-size: 0.8rem; margin-left: 4px; opacity: 0; transition: opacity 0.3s; }
+  .desc-save-ok.show { opacity: 1; }
+  .edit-expenses-table input.desc-input {
+    padding: 4px 6px; border: 1px solid transparent; border-radius: 4px;
+    font-size: 0.85rem; background: transparent; width: 100%; min-width: 100px;
+    font-family: inherit; box-sizing: border-box;
+  }
+  .edit-expenses-table input.desc-input:hover { border-color: #ddd; background: #fafafa; }
+  .edit-expenses-table input.desc-input:focus { outline: none; border-color: #4f46e5; background: #fff; }
+  .expense-card-desc-input {
+    width: 100%; padding: 4px 0; border: none; border-bottom: 1px solid transparent;
+    font-size: 0.9rem; color: #333; margin-bottom: 6px; background: transparent;
+    font-family: inherit; box-sizing: border-box;
+  }
+  .expense-card-desc-input:hover { border-bottom-color: #ddd; }
+  .expense-card-desc-input:focus { outline: none; border-bottom-color: #4f46e5; }
 
   /* Admin tab */
   .admin-section { margin-bottom: 24px; }
@@ -1786,7 +1802,7 @@
         html += '<span class="expense-card-date">' + exp.timestamp + '</span>';
         html += '<span class="expense-card-amount">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</span>';
         html += '</div>';
-        if (exp.description) html += '<div class="expense-card-desc">' + exp.description + '</div>';
+        html += '<input type="text" class="expense-card-desc-input" data-id="' + exp.id + '" data-orig="' + (exp.description||'').replace(/"/g,'&quot;') + '" value="' + (exp.description||'').replace(/"/g,'&quot;') + '" placeholder="Add description...">';
         html += '<div class="expense-card-controls">' + expenseRowControls(exp) + '</div>';
         html += '</div>';
       });
@@ -1801,7 +1817,7 @@
         html += '<tr data-row-id="' + exp.id + '">';
         html += '<td>' + exp.timestamp + '</td>';
         html += '<td style="white-space:nowrap">' + exp.amount.toFixed(2) + ' ' + exp.currency + '</td>';
-        html += '<td>' + (exp.description || '') + '</td>';
+        html += '<td><input type="text" class="desc-input" data-id="' + exp.id + '" data-orig="' + (exp.description||'').replace(/"/g,'&quot;') + '" value="' + (exp.description||'').replace(/"/g,'&quot;') + '" placeholder="—"><span class="desc-save-ok" id="desc-save-ok-' + exp.id + '">saved</span></td>';
         html += '<td><select data-id="' + exp.id + '" data-orig="' + exp.category + '" data-field="category">';
         allCategories.forEach(cat => {
           html += '<option value="' + cat + '"' + (cat === exp.category ? ' selected' : '') + '>' + cat + '</option>';
@@ -1913,12 +1929,43 @@
       });
     });
 
+    // Attach save handlers for description
+    editExpensesContent.querySelectorAll('.desc-input, .expense-card-desc-input').forEach(input => {
+      function saveDescription() {
+        const id = input.dataset.id;
+        const newDesc = input.value;
+        if (newDesc === input.dataset.orig) return;
+
+        fetch('/api/expenses/' + id + '/description', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: newDesc }),
+        })
+          .then(r => r.json())
+          .then(resp => {
+            if (resp.error) { alert('Error: ' + resp.error); return; }
+            const exp = allEditExpenses.find(e => String(e.id) === id);
+            if (exp) exp.description = newDesc;
+            input.dataset.orig = newDesc;
+            const ok = document.getElementById('desc-save-ok-' + id);
+            if (ok) { ok.classList.add('show'); setTimeout(() => ok.classList.remove('show'), 1500); }
+          })
+          .catch(err => {
+            alert('Error saving description');
+            console.error(err);
+          });
+      }
+      input.addEventListener('blur', saveDescription);
+      input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+    });
+
     // Attach delete handlers
     editExpensesContent.querySelectorAll('.expense-delete').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.id;
         const row = editExpensesContent.querySelector('tr[data-row-id="' + id + '"]');
-        const desc = row ? row.children[2].textContent : '';
+        const descInput = row ? row.querySelector('.desc-input') : null;
+        const desc = descInput ? descInput.value : (row ? row.children[2].textContent : '');
         const amt = row ? row.children[1].textContent : '';
         if (!confirm('Delete expense "' + desc + '" (' + amt + ')?')) return;
 

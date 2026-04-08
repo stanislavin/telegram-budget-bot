@@ -877,6 +877,31 @@ def update_expense_planned(expense_id):
         return jsonify({"error": str(e)}), 500
 
 
+@api_bp.route("/api/expenses/<int:expense_id>/description", methods=["PATCH"])
+def update_expense_description(expense_id):
+    """Update the description of a specific expense."""
+    try:
+        body = request.get_json()
+        if body is None or "description" not in body:
+            return jsonify({"error": "description is required"}), 400
+
+        description = body["description"].strip()
+
+        pool = _run(_get_web_pool())
+        result = _run(pool.execute(
+            "UPDATE expenses SET description = $1 WHERE id = $2",
+            description, expense_id,
+        ))
+
+        if result == "UPDATE 0":
+            return jsonify({"error": "expense not found"}), 404
+
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error updating expense description: {e}", exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @api_bp.route("/api/analyze", methods=["POST"])
 def analyze_expenses():
     """Send expenses + user prompt to OpenRouter for analysis."""
