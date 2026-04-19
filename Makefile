@@ -1,4 +1,4 @@
-.PHONY: test coverage clean
+.PHONY: test coverage clean build-apk
 
 # Default test target
 test:
@@ -27,6 +27,10 @@ install:
 coverage-script:
 	@./scripts/run_tests_with_coverage.sh
 
+# Build the Android Expense Tracker APK
+build-apk:
+	@./scripts/build_apk.sh
+
 # Help
 help:
 	@echo "Available targets:"
@@ -35,4 +39,5 @@ help:
 	@echo "  coverage-script - Run tests with coverage using script"
 	@echo "  clean           - Clean coverage reports"
 	@echo "  install         - Install dependencies"
+	@echo "  build-apk       - Build the Android Expense Tracker APK"
 	@echo "  help            - Show this help"

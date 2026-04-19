@@ -198,11 +198,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the Android APK file to the user."""
     apk_path = os.path.join(
-        os.path.dirname(os.path.dirname(__file__)), "android", "budget-tracker.apk"
+        os.path.dirname(os.path.dirname(__file__)), "android", "expense-tracker.apk"
     )
     if os.path.isfile(apk_path):
         await update.message.reply_document(
-            document=open(apk_path, "rb"), filename="budget-tracker.apk"
+            document=open(apk_path, "rb"), filename="expense-tracker.apk"
         )
     else:
         await update.message.reply_text(

@@ -169,3 +169,11 @@ temp_pie_chart_*.png
 TEST
 credentials.json
 package-lock.json
+
+# Android build artifacts
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.apk
+android/captures/
