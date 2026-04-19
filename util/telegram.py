@@ -12,6 +12,7 @@ from telegram import (
     InlineKeyboardMarkup,
     ReplyKeyboardMarkup,
     KeyboardButton,
+    BotCommand,
 )
 from telegram.ext import (
     Application,
@@ -155,7 +156,7 @@ def get_command_keyboard():
     The menu button reveals additional commands."""
     keyboard = [
         [KeyboardButton("📅 Recent Expenses"), KeyboardButton("↩️ Undo last")],
-        [KeyboardButton("📋 Menu")],  # Button to show hidden options
+        [KeyboardButton("📱 Get App"), KeyboardButton("📋 Menu")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -167,7 +168,7 @@ def get_full_command_keyboard():
         [KeyboardButton("📊 View Categories"), KeyboardButton("❓ Help")],
         [KeyboardButton("📅 Recent Expenses"), KeyboardButton("💸 Today's Summary")],
         [KeyboardButton("↩️ Undo last"), KeyboardButton("ℹ️ Bot Info")],
-        [KeyboardButton("🖥️ Dashboard")],  # /dashboard command
+        [KeyboardButton("🖥️ Dashboard"), KeyboardButton("📱 Get App")],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -836,6 +837,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Handle dashboard button
         await dashboard_command(update, context)
         return
+    elif message == "📱 Get App":
+        await app_command(update, context)
+        return
 
     # Enqueue expense for sequential processing per chat
     chat_id = str(update.message.chat_id)
@@ -956,9 +960,32 @@ def _get_bot_info_text() -> str:
     )
 
 
+BOT_COMMANDS = [
+    BotCommand("start", "Start the bot"),
+    BotCommand("app", "Get the Android app (APK)"),
+    BotCommand("summary", "Today's spending summary"),
+    BotCommand("undo", "Delete the last expense"),
+    BotCommand("dashboard", "Open the web dashboard"),
+    BotCommand("help", "How to use the bot"),
+]
+
+
+async def _register_bot_commands(application: Application) -> None:
+    """Register the command menu shown by Telegram's '/' button."""
+    try:
+        await application.bot.set_my_commands(BOT_COMMANDS)
+    except Exception as exc:
+        logger.warning("set_my_commands failed: %s", exc)
+
+
 def create_application():
     """Create and configure the Telegram application."""
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = (
+        Application.builder()
+        .token(TELEGRAM_BOT_TOKEN)
+        .post_init(_register_bot_commands)
+        .build()
+    )
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))

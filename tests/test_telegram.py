@@ -577,6 +577,7 @@ def test_create_application_registers_handlers():
     mock_builder = MagicMock()
     mock_application = MagicMock()
     mock_builder.token.return_value = mock_builder
+    mock_builder.post_init.return_value = mock_builder
     mock_builder.build.return_value = mock_application
 
     with patch("util.telegram.Application.builder", return_value=mock_builder):
