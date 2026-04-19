@@ -218,11 +218,25 @@ def _resolve_apk_release_url() -> str | None:
     return None
 
 
+def _download_apk_bytes(url: str) -> bytes | None:
+    """Fetch the APK bytes (follows redirects to the signed asset URL)."""
+    import requests
+
+    try:
+        resp = requests.get(url, timeout=60, allow_redirects=True)
+        resp.raise_for_status()
+        return resp.content
+    except Exception as exc:
+        logger.warning("Failed to download APK bytes: %s", exc)
+        return None
+
+
 async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the Android APK file to the user.
 
-    Prefers a local build (dev); otherwise fetches the latest GitHub release
-    asset and forwards the URL to Telegram, which pulls and delivers it.
+    Prefers a local build (dev); otherwise downloads the latest GitHub release
+    asset server-side and sends the bytes. Telegram's URL-based fetch rejects
+    application/vnd.android.package-archive, so we can't just forward the URL.
     """
     local_apk = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "android", "expense-tracker.apk"
@@ -235,10 +249,12 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = await asyncio.to_thread(_resolve_apk_release_url)
     if url:
-        await update.message.reply_document(
-            document=url, filename="expense-tracker.apk"
-        )
-        return
+        apk_bytes = await asyncio.to_thread(_download_apk_bytes, url)
+        if apk_bytes:
+            await update.message.reply_document(
+                document=apk_bytes, filename="expense-tracker.apk"
+            )
+            return
 
     await update.message.reply_text(
         "APK not available yet. The latest build hasn't published a release."

@@ -1027,16 +1027,19 @@ async def test_app_command_apk_not_found(mock_update, mock_context):
 
 
 async def test_app_command_uses_release_url(mock_update, mock_context):
-    """Forwards the GitHub release asset URL when no local APK is present."""
+    """Downloads the APK server-side and sends the bytes when no local APK exists."""
     url = "https://github.com/owner/repo/releases/download/android-latest/expense-tracker.apk"
+    fake_bytes = b"PK\x03\x04fake-apk-bytes"
     mock_update.message.reply_document = AsyncMock()
     with patch("util.telegram.os.path.isfile", return_value=False), patch(
         "util.telegram._resolve_apk_release_url", return_value=url
+    ), patch(
+        "util.telegram._download_apk_bytes", return_value=fake_bytes
     ):
         await app_command(mock_update, mock_context)
 
     mock_update.message.reply_document.assert_called_once_with(
-        document=url, filename="expense-tracker.apk"
+        document=fake_bytes, filename="expense-tracker.apk"
     )
 
 
