@@ -30,6 +30,8 @@ from util.config import (
     SERVICE_URL,
     DATABASE_URL,
     GIT_COMMIT_SHORT,
+    GITHUB_REPO,
+    APK_RELEASE_TAG,
 )
 from util.sheets import (
     save_to_sheets,
@@ -195,19 +197,51 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+def _resolve_apk_release_url() -> str | None:
+    """Look up the latest APK asset URL from the GitHub release."""
+    import requests
+
+    api = f"https://api.github.com/repos/{GITHUB_REPO}/releases/tags/{APK_RELEASE_TAG}"
+    try:
+        resp = requests.get(
+            api,
+            headers={"Accept": "application/vnd.github+json"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        for asset in resp.json().get("assets", []):
+            if asset.get("name", "").endswith(".apk"):
+                return asset.get("browser_download_url")
+    except Exception as exc:
+        logger.warning("Failed to resolve APK release URL: %s", exc)
+    return None
+
+
 async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send the Android APK file to the user."""
-    apk_path = os.path.join(
+    """Send the Android APK file to the user.
+
+    Prefers a local build (dev); otherwise fetches the latest GitHub release
+    asset and forwards the URL to Telegram, which pulls and delivers it.
+    """
+    local_apk = os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "android", "expense-tracker.apk"
     )
-    if os.path.isfile(apk_path):
+    if os.path.isfile(local_apk):
         await update.message.reply_document(
-            document=open(apk_path, "rb"), filename="expense-tracker.apk"
+            document=open(local_apk, "rb"), filename="expense-tracker.apk"
         )
-    else:
-        await update.message.reply_text(
-            "APK not available. Please build it first with `make build-apk`."
+        return
+
+    url = await asyncio.to_thread(_resolve_apk_release_url)
+    if url:
+        await update.message.reply_document(
+            document=url, filename="expense-tracker.apk"
         )
+        return
+
+    await update.message.reply_text(
+        "APK not available yet. The latest build hasn't published a release."
+    )
 
 
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

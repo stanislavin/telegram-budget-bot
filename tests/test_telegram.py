@@ -1014,12 +1014,28 @@ def test_get_bot_info_text():
 
 
 async def test_app_command_apk_not_found(mock_update, mock_context):
-    """Test app_command when APK file doesn't exist."""
-    with patch("util.telegram.os.path.isfile", return_value=False):
+    """Falls back to error message when no local APK and no release asset."""
+    with patch("util.telegram.os.path.isfile", return_value=False), patch(
+        "util.telegram._resolve_apk_release_url", return_value=None
+    ):
         await app_command(mock_update, mock_context)
 
     mock_update.message.reply_text.assert_called_once_with(
-        "APK not available. Please build it first with `make build-apk`."
+        "APK not available yet. The latest build hasn't published a release."
+    )
+
+
+async def test_app_command_uses_release_url(mock_update, mock_context):
+    """Forwards the GitHub release asset URL when no local APK is present."""
+    url = "https://github.com/owner/repo/releases/download/android-latest/expense-tracker.apk"
+    mock_update.message.reply_document = AsyncMock()
+    with patch("util.telegram.os.path.isfile", return_value=False), patch(
+        "util.telegram._resolve_apk_release_url", return_value=url
+    ):
+        await app_command(mock_update, mock_context)
+
+    mock_update.message.reply_document.assert_called_once_with(
+        document=url, filename="expense-tracker.apk"
     )
 
 

@@ -49,6 +49,10 @@ HEALTH_CHECK_HOST = '0.0.0.0'
 # PostgreSQL Configuration (Neon)
 DATABASE_URL = os.getenv('DATABASE_URL')
 
+# Android APK distribution
+GITHUB_REPO = os.getenv('GITHUB_REPO', 'stanislavin/telegram-budget-bot')
+APK_RELEASE_TAG = os.getenv('APK_RELEASE_TAG', 'android-latest')
+
 # Git info (captured once at startup)
 # On Koyeb, KOYEB_GIT_SHA is available at runtime. Locally, fall back to git.
 GIT_COMMIT_SHORT = os.getenv("GIT_COMMIT_SHORT", "").strip()
