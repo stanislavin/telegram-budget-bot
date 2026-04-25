@@ -11,11 +11,9 @@ def mock_env_vars():
     """Fixture to mock environment variables."""
     env_vars = {
         'TELEGRAM_BOT_TOKEN': 'test_bot_token',
-        'GOOGLE_SHEET_ID': 'test_sheet_id',
         'OPENROUTER_API_KEY': 'test_openrouter_key',
         'OPENROUTER_LLM_VERSION': 'test_model_version',
         'SERVICE_URL': 'http://test-service.com',
-        'GOOGLE_CREDENTIALS_PATH': 'test_credentials.json'
     }
     with patch.dict(os.environ, env_vars, clear=True):
         yield env_vars
@@ -29,7 +27,6 @@ def test_environment_variables_loaded(mock_env_vars):
     importlib.reload(config)
     
     assert config.TELEGRAM_BOT_TOKEN == 'test_bot_token'
-    assert config.GOOGLE_SHEET_ID == 'test_sheet_id'
     assert config.OPENROUTER_API_KEY == 'test_openrouter_key'
     assert config.SERVICE_URL == 'http://test-service.com'
 
@@ -40,7 +37,6 @@ def test_default_values():
     from util import config
     assert config.HEALTH_CHECK_PORT == 8000
     assert config.HEALTH_CHECK_HOST == '0.0.0.0'
-    assert config.SHEET_NAME == 'Form Responses 1'
     assert config.OPENROUTER_URL == "https://openrouter.ai/api/v1/chat/completions"
 
 
@@ -55,14 +51,6 @@ def test_openrouter_url_constant():
     """Test that OpenRouter URL is set correctly."""
     from util import config
     assert config.OPENROUTER_URL == "https://openrouter.ai/api/v1/chat/completions"
-
-
-def test_google_sheets_configuration():
-    """Test Google Sheets configuration constants."""
-    from util import config
-    assert config.SHEET_NAME == 'Form Responses 1'
-    assert config.RANGE_NAME == 'Form Responses 1!A:F'
-    assert config.GOOGLE_SCOPES == ['https://www.googleapis.com/auth/spreadsheets']
 
 
 def test_get_llm_prompt_success():
@@ -183,13 +171,6 @@ def test_custom_service_url():
     importlib.reload(config)
     
     assert config.SERVICE_URL == 'https://custom-service.com'
-
-
-def test_range_name_dynamic_generation():
-    """Test that RANGE_NAME is dynamically generated from SHEET_NAME."""
-    from util import config
-    expected_range = f"{config.SHEET_NAME}!A:F"
-    assert config.RANGE_NAME == expected_range
 
 
 def test_global_prompt_cache_reset():

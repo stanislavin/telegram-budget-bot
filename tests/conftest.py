@@ -19,10 +19,6 @@ def clean_pending_expenses():
     # Clean up any pending expenses that might have been left by tests
     from util.telegram import pending_expenses
     pending_expenses.clear()
-    # Reset daily stats cache
-    import util.sheets
-    util.sheets._daily_stats_cache = {}
-    util.sheets._daily_stats_cache_time = 0
     # Reset Postgres pool singleton
     import util.postgres
     util.postgres._pool = None
@@ -33,11 +29,9 @@ def mock_environment():
     """Fixture to provide a clean test environment with mocked config values."""
     env_vars = {
         'TELEGRAM_BOT_TOKEN': 'test_bot_token_123',
-        'GOOGLE_SHEET_ID': 'test_sheet_id_456',
         'OPENROUTER_API_KEY': 'test_openrouter_key_789',
         'OPENROUTER_LLM_VERSION': 'test_model_v1',
         'SERVICE_URL': 'http://test-service.localhost:8000',
-        'GOOGLE_CREDENTIALS_PATH': 'test_credentials.json'
     }
     
     with patch.dict(os.environ, env_vars, clear=False):
@@ -105,29 +99,6 @@ def sample_expense_data():
         'category': 'food',
         'description': 'lunch at restaurant'
     }
-
-
-@pytest.fixture
-def mock_google_sheets_service():
-    """Mock Google Sheets service for testing."""
-    import util.sheets
-    util.sheets._sheets_service = None  # Reset cache before test
-    with patch('util.sheets.service_account.Credentials.from_service_account_file') as mock_creds:
-        mock_creds.return_value = MagicMock()
-        with patch('util.sheets.build') as mock_build:
-            mock_service = MagicMock()
-            mock_build.return_value = mock_service
-
-            # Configure default successful responses
-            mock_service.spreadsheets().values().append().execute.return_value = {
-                'updates': {'updatedCells': 6}
-            }
-            mock_service.spreadsheets().values().get().execute.return_value = {
-                'values': []
-            }
-
-            yield mock_service
-    util.sheets._sheets_service = None  # Reset cache after test
 
 
 @pytest.fixture

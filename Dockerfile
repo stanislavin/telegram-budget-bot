@@ -20,9 +20,8 @@ COPY web/ web/
 
 # The container expects these env vars at runtime:
 #   TELEGRAM_BOT_TOKEN
-#   GOOGLE_SHEET_ID
+#   DATABASE_URL             (PostgreSQL connection string)
 #   OPENROUTER_API_KEY
-#   GOOGLE_CREDENTIALS_PATH  (path to the mounted credentials file)
 #   OPENROUTER_LLM_VERSION   (optional)
 #   SERVICE_URL              (optional, for health-check nudge)
 #   TAILSCALE_AUTHKEY        (optional, Tailscale auth key for joining tailnet)

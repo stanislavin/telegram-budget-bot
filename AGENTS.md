@@ -10,7 +10,7 @@
     __init__.py
     config.py               # env loading, prompt caching, constants
     telegram.py             # all bot handlers, keyboards, callbacks
-    sheets.py               # Google Sheets I/O helpers
+    postgres.py             # PostgreSQL persistence layer
     openrouter.py           # LLM request wrapper with retry/fallback logic
     scheduler.py            # daily summary job registration
     health.py               # Flask health/nudge service
@@ -116,7 +116,7 @@ When a new third‑party library is required:
 ## 7️⃣ Security & Secrets
 - `.env` and `credentials.json` are listed in `.gitignore`; never commit them.
 - All secret access must go through helpers in `util/config.py`.
-- Required env vars: `TELEGRAM_BOT_TOKEN`, `GOOGLE_SHEET_ID`, `OPENROUTER_API_KEY`. Optional: `OPENROUTER_LLM_VERSION`, `SERVICE_URL`.
+- Required env vars: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `OPENROUTER_API_KEY`. Optional: `OPENROUTER_LLM_VERSION`, `SERVICE_URL`.
 
 ---
 

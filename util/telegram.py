@@ -29,74 +29,23 @@ from util.config import (
     OPENROUTER_LLM_VERSION,
     OPENROUTER_FALLBACK_MODELS,
     SERVICE_URL,
-    DATABASE_URL,
     GIT_COMMIT_SHORT,
     GITHUB_REPO,
     APK_RELEASE_TAG,
 )
-from util.sheets import (
-    save_to_sheets,
-    get_recent_expenses,
-    get_daily_summary,
-    get_daily_stats,
-    delete_last_expense,
-)
 from util.openrouter import process_with_openrouter
-
-if DATABASE_URL:
-    from util.postgres import (  # type: ignore[import-not-found]
-        save_to_postgres,
-        delete_last_expense_pg,
-        get_daily_stats_pg,
-        get_daily_summary_pg,
-        get_recent_expenses_pg,
-        upsert_chat_id,
-        get_all_chat_ids,
-        get_last_deployed_commit,
-        set_last_deployed_commit,
-    )
-
-    _HAS_PG = True
-else:
-    _HAS_PG = False
-
+from util.postgres import (
+    save_to_postgres,
+    delete_last_expense_pg,
+    get_daily_stats_pg,
+    get_daily_summary_pg,
+    get_recent_expenses_pg,
+    upsert_chat_id,
+    get_all_chat_ids,
+    get_last_deployed_commit,
+    set_last_deployed_commit,
+)
 from util.message_queue import enqueue_expense, queue_size
-
-
-async def _dual_save(amount, currency, category, description, spending_type=None):
-    """Save to Sheets (+ Postgres when configured). Returns Sheets result."""
-    if _HAS_PG:
-        from util.postgres import save_to_postgres  # type: ignore[import-not-found]
-        sheets_coro = save_to_sheets(amount, currency, category, description, spending_type=spending_type)
-        pg_coro = save_to_postgres(amount, currency, category, description, spending_type=spending_type)
-        (sheets_result, pg_result) = await asyncio.gather(
-            sheets_coro, pg_coro, return_exceptions=True
-        )
-        if isinstance(pg_result, Exception):
-            logger.warning(f"Postgres save failed (non-blocking): {pg_result}")
-        elif isinstance(pg_result, tuple) and pg_result[1] is not None:
-            logger.warning(f"Postgres save error (non-blocking): {pg_result[1]}")
-        if isinstance(sheets_result, Exception):
-            raise sheets_result
-        return sheets_result
-    return await save_to_sheets(amount, currency, category, description, spending_type=spending_type)
-
-
-async def _dual_delete():
-    """Delete from Sheets (+ Postgres when configured). Returns Sheets result."""
-    if _HAS_PG:
-        from util.postgres import delete_last_expense_pg  # type: ignore[import-not-found]
-        sheets_coro = delete_last_expense()
-        pg_coro = delete_last_expense_pg()
-        (sheets_result, pg_result) = await asyncio.gather(
-            sheets_coro, pg_coro, return_exceptions=True
-        )
-        if isinstance(pg_result, Exception):
-            logger.warning(f"Postgres delete failed (non-blocking): {pg_result}")
-        if isinstance(sheets_result, Exception):
-            raise sheets_result
-        return sheets_result
-    return await delete_last_expense()
 
 
 logger = logging.getLogger(__name__)
@@ -275,16 +224,15 @@ async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def summary_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send today's spending summary."""
     await update.message.reply_text("🔄 Calculating today's expenses...")  # type: ignore[union-attr]
-    _get_summary = get_daily_summary_pg if _HAS_PG else get_daily_summary  # type: ignore[name-defined]
-    summary_text, _ = await _get_summary()
+    summary_text, _ = await get_daily_summary_pg()
     await update.message.reply_text(summary_text)  # type: ignore[union-attr]
 
 
 async def undo_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Delete the last expense from the sheet."""
+    """Delete the last expense."""
     await update.message.reply_text("🔄 Deleting last expense...")  # type: ignore[union-attr]
 
-    expense_info, error = await _dual_delete()
+    expense_info, error = await delete_last_expense_pg()
 
     if error:
         await update.message.reply_text(f"❌ {error}")  # type: ignore[union-attr]
@@ -313,7 +261,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
         status_message = expense_data["status_message"]
 
         # Save to sheets (+ Postgres) with retry
-        success, error = await _dual_save(
+        success, error = await save_to_postgres(
             expense_data["amount"],
             expense_data["currency"],
             expense_data["category"],
@@ -323,8 +271,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
 
         if success:
             # Get daily stats
-            _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
-            currency_totals, _ = await _get_stats()
+            currency_totals, _ = await get_daily_stats_pg()
 
             # Format totals
             totals_str = format_daily_totals(currency_totals)
@@ -342,7 +289,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
             )
             await status_message.edit_text(final_text)
         else:
-            final_text = f"❌ Error auto-saving to spreadsheet: {error}"
+            final_text = f"❌ Error auto-saving to database: {error}"
             await status_message.edit_text(final_text)
 
             # Add manual retry button
@@ -350,7 +297,7 @@ async def auto_confirm_expense(expense_id: str, context: ContextTypes.DEFAULT_TY
                 [
                     InlineKeyboardButton(
                         "🔄 Manual Retry",
-                        callback_data=f"action:manual_sheet_retry|id:{expense_id}",
+                        callback_data=f"action:manual_retry|id:{expense_id}",
                     )
                 ]
             ]
@@ -469,15 +416,13 @@ def _category_picker_keyboard() -> InlineKeyboardMarkup:
 
 async def _send_filtered_expenses(message_to_edit, category: str = None, spending_type: str = None):
     """Fetch and display filtered expenses, editing the given message."""
-    _get_recent = get_recent_expenses_pg if DATABASE_URL else get_recent_expenses
-
     kwargs = {}
     if category:
         kwargs["category"] = category
     if spending_type:
         kwargs["spending_type"] = spending_type
 
-    expenses_text = await _get_recent(**kwargs)
+    expenses_text = await get_recent_expenses_pg(**kwargs)
 
     # Add filter label
     filter_label = ""
@@ -572,7 +517,7 @@ async def _handle_openrouter_retry(query, expense_id, update, context):
 
 async def _handle_sheet_retry(query, expense_id):
     """Handle manual retry for saving to Google Sheets."""
-    await query.edit_message_text("🔄 Retrying to save to spreadsheet...")
+    await query.edit_message_text("🔄 Retrying to save to database...")
 
     expense_data = pending_expenses.get(expense_id)
     if not expense_data:
@@ -581,7 +526,7 @@ async def _handle_sheet_retry(query, expense_id):
         )
         return
 
-    success, error = await _dual_save(
+    success, error = await save_to_postgres(
         expense_data["amount"],
         expense_data["currency"],
         expense_data["category"],
@@ -590,8 +535,7 @@ async def _handle_sheet_retry(query, expense_id):
     )
 
     if success:
-        _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
-        currency_totals, _ = await _get_stats()
+        currency_totals, _ = await get_daily_stats_pg()
         totals_str = format_daily_totals(currency_totals)
 
         # Add spending type to the message if present
@@ -606,13 +550,13 @@ async def _handle_sheet_retry(query, expense_id):
             f"{joke}"
         )
     else:
-        final_text = f"❌ Error saving to spreadsheet: {error}"
+        final_text = f"❌ Error saving to database: {error}"
 
         keyboard = [
             [
                 InlineKeyboardButton(
                     "🔄 Manual Retry",
-                    callback_data=f"action:manual_sheet_retry|id:{expense_id}",
+                    callback_data=f"action:manual_retry|id:{expense_id}",
                 )
             ]
         ]
@@ -642,8 +586,8 @@ JOKES = [
 
 async def _handle_confirm(query, expense_id, expense_data):
     """Handle expense confirmation."""
-    await query.edit_message_text("💾 Saving to spreadsheet...")
-    success, error = await _dual_save(
+    await query.edit_message_text("💾 Saving to database...")
+    success, error = await save_to_postgres(
         expense_data["amount"],
         expense_data["currency"],
         expense_data["category"],
@@ -652,8 +596,7 @@ async def _handle_confirm(query, expense_id, expense_data):
     )
 
     if success:
-        _get_stats = get_daily_stats_pg if DATABASE_URL else get_daily_stats
-        currency_totals, _ = await _get_stats()
+        currency_totals, _ = await get_daily_stats_pg()
         totals_str = format_daily_totals(currency_totals)
 
         # Add spending type to the message if present
@@ -669,13 +612,13 @@ async def _handle_confirm(query, expense_id, expense_data):
         )
         await query.edit_message_text(final_text)
     else:
-        final_text = f"❌ Error saving to spreadsheet: {error}"
+        final_text = f"❌ Error saving to database: {error}"
 
         keyboard = [
             [
                 InlineKeyboardButton(
                     "🔄 Manual Retry",
-                    callback_data=f"action:manual_sheet_retry|id:{expense_id}",
+                    callback_data=f"action:manual_retry|id:{expense_id}",
                 )
             ]
         ]
@@ -754,7 +697,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _handle_openrouter_retry(query, expense_id, update, context)
         return
 
-    if action == "manual_sheet_retry":
+    if action == "manual_retry":
         await _handle_sheet_retry(query, expense_id)
         return
 
@@ -836,8 +779,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     elif message == "💸 Today's Summary":
         await update.message.reply_text("🔄 Calculating today's expenses...")
-        _get_summary = get_daily_summary_pg if DATABASE_URL else get_daily_summary
-        summary_text, _ = await _get_summary()
+        summary_text, _ = await get_daily_summary_pg()
         await update.message.reply_text(summary_text)
         return
     elif message == "↩️ Undo last":
@@ -862,11 +804,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Track chat ID for deploy notifications
-    if _HAS_PG:
-        try:
-            await upsert_chat_id(update.message.chat_id)
-        except Exception as exc:
-            logger.debug("upsert_chat_id failed: %s", exc)
+    try:
+        await upsert_chat_id(update.message.chat_id)
+    except Exception as exc:
+        logger.debug("upsert_chat_id failed: %s", exc)
 
     # Enqueue expense for sequential processing per chat
     chat_id = str(update.message.chat_id)
@@ -1003,7 +944,7 @@ async def _on_post_init(application: Application) -> None:
 
 async def _notify_deploy(application: Application) -> None:
     """Send a deploy notification to all known chats if the commit changed."""
-    if not _HAS_PG or GIT_COMMIT_SHORT == "unknown":
+    if GIT_COMMIT_SHORT == "unknown":
         return
     try:
         prev_commit = await get_last_deployed_commit()

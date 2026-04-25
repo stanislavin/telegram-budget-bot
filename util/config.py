@@ -23,13 +23,6 @@ def env_flag(name: str, default: bool = True) -> bool:
 TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 RUN_TELEGRAM_BOT = env_flag('RUN_TELEGRAM_BOT', True)
 
-# Google Sheets Configuration
-GOOGLE_CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', 'credentials.json')
-GOOGLE_SHEET_ID = os.getenv('GOOGLE_SHEET_ID')
-SHEET_NAME = 'Form Responses 1'
-RANGE_NAME = f'{SHEET_NAME}!A:F'
-GOOGLE_SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
-
 # Local LLM Configuration (preferred, on tailnet)
 LOCAL_LLM_URL = os.getenv('LOCAL_LLM_URL', 'http://localhost:1234/v1/chat/completions')
 LOCAL_LLM_MODEL = os.getenv('LOCAL_LLM_MODEL', 'zai-org/glm-4.7-flash')

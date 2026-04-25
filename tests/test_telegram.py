@@ -138,9 +138,9 @@ async def test_help_command(mock_update, mock_context):
 @pytest.mark.asyncio
 @patch("util.telegram._schedule_auto_confirm")
 @patch("util.telegram.process_with_openrouter", new_callable=AsyncMock)
-@patch("util.telegram.save_to_sheets", new_callable=AsyncMock)
+@patch("util.telegram.save_to_postgres", new_callable=AsyncMock)
 async def test_handle_message_expense(
-    mock_save_to_sheets,
+    mock_save_to_postgres,
     mock_process_with_openrouter,
     mock_schedule,
     mock_update,
@@ -225,10 +225,10 @@ async def test_handle_message_openrouter_error(
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.save_to_sheets", new_callable=AsyncMock)
-@patch("util.telegram.get_daily_stats", new_callable=AsyncMock)
+@patch("util.telegram.save_to_postgres", new_callable=AsyncMock)
+@patch("util.telegram.get_daily_stats_pg", new_callable=AsyncMock)
 async def test_button_callback_confirm_success(
-    mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context
+    mock_get_daily_stats_pg, mock_save_to_postgres, mock_update, mock_context
 ):
     """Test confirming an expense via button callback."""
     expense_id = "12345-67890"
@@ -240,16 +240,16 @@ async def test_button_callback_confirm_success(
         "status_message": AsyncMock(),
     }
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
-    mock_save_to_sheets.return_value = (True, None)
+    mock_save_to_postgres.return_value = (True, None)
 
-    mock_get_daily_stats.return_value = ({"EUR": 100.0}, {})
+    mock_get_daily_stats_pg.return_value = ({"EUR": 100.0}, {})
 
     await button_callback(mock_update, mock_context)
 
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
+    mock_save_to_postgres.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
     calls = mock_update.callback_query.edit_message_text.call_args_list
-    assert calls[0][0][0] == "💾 Saving to spreadsheet..."
+    assert calls[0][0][0] == "💾 Saving to database..."
     final_text = calls[1][0][0]
     assert "✅ Saved: 75.0 EUR - Transport - Taxi" in final_text
     assert "💸 Total spent today:" in final_text
@@ -257,9 +257,9 @@ async def test_button_callback_confirm_success(
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.save_to_sheets", new_callable=AsyncMock)
+@patch("util.telegram.save_to_postgres", new_callable=AsyncMock)
 async def test_button_callback_confirm_failure(
-    mock_save_to_sheets, mock_update, mock_context
+    mock_save_to_postgres, mock_update, mock_context
 ):
     """Test confirming an expense with save failure via button callback."""
     expense_id = "12345-67890"
@@ -271,7 +271,7 @@ async def test_button_callback_confirm_failure(
         "status_message": AsyncMock(),
     }
     mock_update.callback_query.data = f"action:confirm|id:{expense_id}"
-    mock_save_to_sheets.return_value = (False, "Sheets error")
+    mock_save_to_postgres.return_value = (False, "Database error")
 
     # Mock the edit_message_reply_markup method as well since it's called when there's an error
     mock_update.callback_query.edit_message_reply_markup = AsyncMock()
@@ -279,10 +279,10 @@ async def test_button_callback_confirm_failure(
     await button_callback(mock_update, mock_context)
 
     mock_update.callback_query.answer.assert_called_once()
-    mock_save_to_sheets.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
+    mock_save_to_postgres.assert_called_once_with(75.0, "EUR", "Transport", "Taxi", spending_type=None)
     calls = mock_update.callback_query.edit_message_text.call_args_list
-    assert calls[0][0][0] == "💾 Saving to spreadsheet..."
-    assert calls[1][0][0] == "❌ Error saving to spreadsheet: Sheets error"
+    assert calls[0][0][0] == "💾 Saving to database..."
+    assert calls[1][0][0] == "❌ Error saving to database: Database error"
     assert expense_id not in pending_expenses
 
 
@@ -378,10 +378,10 @@ async def test_button_callback_back(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.save_to_sheets", new_callable=AsyncMock)
-@patch("util.telegram.get_daily_stats", new_callable=AsyncMock)
+@patch("util.telegram.save_to_postgres", new_callable=AsyncMock)
+@patch("util.telegram.get_daily_stats_pg", new_callable=AsyncMock)
 async def test_auto_confirm_expense_success(
-    mock_get_daily_stats, mock_save_to_sheets, mock_update, mock_context
+    mock_get_daily_stats_pg, mock_save_to_postgres, mock_update, mock_context
 ):
     """Test auto-confirmation of an expense."""
     expense_id = "auto-123"
@@ -393,16 +393,16 @@ async def test_auto_confirm_expense_success(
         "description": "Electricity bill",
         "status_message": mock_status_message,
     }
-    mock_save_to_sheets.return_value = (True, None)
+    mock_save_to_postgres.return_value = (True, None)
 
-    mock_get_daily_stats.return_value = ({"GBP": 50.0}, {})
+    mock_get_daily_stats_pg.return_value = ({"GBP": 50.0}, {})
 
     # We need to run this in a separate task as auto_confirm_expense has a sleep
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))
     await asyncio.sleep(10.1)  # Wait for the sleep to finish
     await task  # Ensure the task completes
 
-    mock_save_to_sheets.assert_called_once_with(
+    mock_save_to_postgres.assert_called_once_with(
         30.0, "GBP", "Utilities", "Electricity bill", spending_type=None
     )
     mock_status_message.edit_text.assert_called_once()
@@ -415,9 +415,9 @@ async def test_auto_confirm_expense_success(
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.save_to_sheets", new_callable=AsyncMock)
+@patch("util.telegram.save_to_postgres", new_callable=AsyncMock)
 async def test_auto_confirm_expense_failure(
-    mock_save_to_sheets, mock_update, mock_context
+    mock_save_to_postgres, mock_update, mock_context
 ):
     """Test auto-confirmation failure."""
     expense_id = "auto-456"
@@ -429,15 +429,15 @@ async def test_auto_confirm_expense_failure(
         "description": "Monthly rent",
         "status_message": mock_status_message,
     }
-    mock_save_to_sheets.return_value = (False, "Auto-save error")
+    mock_save_to_postgres.return_value = (False, "Auto-save error")
 
     task = asyncio.create_task(auto_confirm_expense(expense_id, mock_context))
     await asyncio.sleep(10.1)
     await task
 
-    mock_save_to_sheets.assert_called_once_with(40.0, "JPY", "Rent", "Monthly rent", spending_type=None)
+    mock_save_to_postgres.assert_called_once_with(40.0, "JPY", "Rent", "Monthly rent", spending_type=None)
     mock_status_message.edit_text.assert_called_once_with(
-        f"❌ Error auto-saving to spreadsheet: Auto-save error"
+        f"❌ Error auto-saving to database: Auto-save error"
     )
     assert expense_id not in pending_expenses
 
@@ -494,20 +494,19 @@ async def test_handle_message_view_categories_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.DATABASE_URL", None)
-@patch("util.telegram.get_recent_expenses", new_callable=AsyncMock)
+@patch("util.telegram.get_recent_expenses_pg", new_callable=AsyncMock)
 async def test_handle_message_recent_expenses_button(
-    mock_get_recent_expenses, mock_update, mock_context
+    mock_get_recent_expenses_pg, mock_update, mock_context
 ):
     """Test '📅 Recent Expenses' button handling."""
     mock_update.message.text = "📅 Recent Expenses"
-    mock_get_recent_expenses.return_value = "Recent expenses data"
+    mock_get_recent_expenses_pg.return_value = "Recent expenses data"
     # reply_text returns a message object that will be edited with results
     status_msg = AsyncMock()
     mock_update.message.reply_text.return_value = status_msg
     await handle_message(mock_update, mock_context)
     mock_update.message.reply_text.assert_any_call("🔄 Fetching recent expenses...")
-    mock_get_recent_expenses.assert_called_once()
+    mock_get_recent_expenses_pg.assert_called_once()
     status_msg.edit_text.assert_called_once()
 
 
@@ -544,30 +543,28 @@ async def test_handle_message_dashboard_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram._HAS_PG", False)
-@patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
-async def test_summary_command(mock_get_daily_summary, mock_update, mock_context):
+@patch("util.telegram.get_daily_summary_pg", new_callable=AsyncMock)
+async def test_summary_command(mock_get_daily_summary_pg, mock_update, mock_context):
     """Test the /summary command."""
-    mock_get_daily_summary.return_value = ("Daily summary data", None)
+    mock_get_daily_summary_pg.return_value = ("Daily summary data", None)
     await summary_command(mock_update, mock_context)
     mock_update.message.reply_text.assert_any_call("🔄 Calculating today's expenses...")
-    mock_get_daily_summary.assert_called_once()
+    mock_get_daily_summary_pg.assert_called_once()
     mock_update.message.reply_text.assert_any_call("Daily summary data")
 
 
 @pytest.mark.asyncio
 @pytest.mark.asyncio
-@patch("util.telegram.DATABASE_URL", None)
-@patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
+@patch("util.telegram.get_daily_summary_pg", new_callable=AsyncMock)
 async def test_handle_message_todays_summary_button(
-    mock_get_daily_summary, mock_update, mock_context
+    mock_get_daily_summary_pg, mock_update, mock_context
 ):
     """Test '💸 Today's Summary' button handling."""
     mock_update.message.text = "💸 Today's Summary"
-    mock_get_daily_summary.return_value = ("Today's summary data", None)
+    mock_get_daily_summary_pg.return_value = ("Today's summary data", None)
     await handle_message(mock_update, mock_context)
     mock_update.message.reply_text.assert_any_call("🔄 Calculating today's expenses...")
-    mock_get_daily_summary.assert_called_once()
+    mock_get_daily_summary_pg.assert_called_once()
     mock_update.message.reply_text.assert_any_call("Today's summary data")
 
 
@@ -768,7 +765,7 @@ async def test_cleanup_processed_expense(mock_sleep):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.delete_last_expense", new_callable=AsyncMock)
+@patch("util.telegram.delete_last_expense_pg", new_callable=AsyncMock)
 async def test_undo_command_success(mock_delete, mock_update, mock_context):
     """Test undo_command when deletion succeeds (lines 97-110)."""
     mock_delete.return_value = (
@@ -790,7 +787,7 @@ async def test_undo_command_success(mock_delete, mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.delete_last_expense", new_callable=AsyncMock)
+@patch("util.telegram.delete_last_expense_pg", new_callable=AsyncMock)
 async def test_undo_command_error(mock_delete, mock_update, mock_context):
     """Test undo_command when deletion fails (lines 97-103)."""
     mock_delete.return_value = (None, "No expenses to delete.")
@@ -815,7 +812,7 @@ async def test_handle_message_help_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.delete_last_expense", new_callable=AsyncMock)
+@patch("util.telegram.delete_last_expense_pg", new_callable=AsyncMock)
 async def test_handle_message_undo_button(mock_delete, mock_update, mock_context):
     """Test '↩️ Undo last' button routes to undo_command (lines 456-457)."""
     mock_delete.return_value = (
@@ -1051,10 +1048,9 @@ def test_category_picker_keyboard_single_category():
 # ---------- _send_filtered_expenses with filters ----------
 
 
-@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_by_category(mock_message_to_edit):
     """Test _send_filtered_expenses with category filter."""
-    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+    with patch("util.telegram.get_recent_expenses_pg", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = "Expense list for food"
         await _send_filtered_expenses(mock_message_to_edit, category="food")
 
@@ -1062,10 +1058,9 @@ async def test_send_filtered_expenses_by_category(mock_message_to_edit):
     mock_message_to_edit.edit_text.assert_called_once()
 
 
-@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_by_spending_type(mock_message_to_edit):
     """Test _send_filtered_expenses with spending_type filter."""
-    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+    with patch("util.telegram.get_recent_expenses_pg", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = "Expense list for need"
         await _send_filtered_expenses(mock_message_to_edit, spending_type="need")
 
@@ -1073,10 +1068,9 @@ async def test_send_filtered_expenses_by_spending_type(mock_message_to_edit):
     mock_message_to_edit.edit_text.assert_called_once()
 
 
-@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_both_filters(mock_message_to_edit):
     """Test _send_filtered_expenses with both category and spending_type."""
-    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+    with patch("util.telegram.get_recent_expenses_pg", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = "Expense list"
         await _send_filtered_expenses(
             mock_message_to_edit, category="food", spending_type="need"
@@ -1085,12 +1079,11 @@ async def test_send_filtered_expenses_both_filters(mock_message_to_edit):
     mock_get.assert_called_once_with(category="food", spending_type="need")
 
 
-@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_truncation(mock_message_to_edit):
     """Test _send_filtered_expenses truncates long messages."""
     long_text = "x" * 5000
 
-    with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
+    with patch("util.telegram.get_recent_expenses_pg", new_callable=AsyncMock) as mock_get:
         mock_get.return_value = long_text
         await _send_filtered_expenses(mock_message_to_edit, category="food")
 

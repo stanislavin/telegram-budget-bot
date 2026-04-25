@@ -7,7 +7,6 @@ from util.config import (
     SERVICE_URL,
     HEALTH_CHECK_HOST,
     HEALTH_CHECK_PORT,
-    GOOGLE_SHEET_ID,
     OPENROUTER_LLM_VERSION,
 )
 
@@ -21,13 +20,11 @@ def main():
         "HEALTH_CHECK_HOST: %s\n"
         "HEALTH_CHECK_PORT: %s\n"
         "SERVICE_URL: %s\n"
-        "GOOGLE_SHEET_ID: %s\n"
         "OPENROUTER_LLM_VERSION: %s",
         str(RUN_TELEGRAM_BOT).lower(),
         HEALTH_CHECK_HOST,
         HEALTH_CHECK_PORT,
         SERVICE_URL,
-        GOOGLE_SHEET_ID or "<missing>",
         OPENROUTER_LLM_VERSION,
     )
     # Start health check server and nudge service
