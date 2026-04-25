@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.expensetracker.notif.data.AppDatabase
+import com.expensetracker.notif.data.AppFilterPrefs
 import com.expensetracker.notif.data.NotificationEntity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,8 @@ class NotificationCaptureService : NotificationListenerService() {
         if (title.isNullOrBlank() && text.isNullOrBlank()) return
 
         val packageName = sbn.packageName
+        if (!AppFilterPrefs.isAllowed(applicationContext, packageName)) return
+
         val appLabel = runCatching {
             val pm = packageManager
             val info = pm.getApplicationInfo(packageName, 0)
