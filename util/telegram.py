@@ -26,10 +26,12 @@ from telegram.ext import (
 from util.config import (
     TELEGRAM_BOT_TOKEN,
     get_llm_prompt,
+    LOCAL_LLM_MODEL,
     OPENROUTER_LLM_VERSION,
     OPENROUTER_FALLBACK_MODELS,
     SERVICE_URL,
     GIT_COMMIT_SHORT,
+    GIT_RECENT_COMMITS,
     GITHUB_REPO,
     APK_RELEASE_TAG,
 )
@@ -900,24 +902,26 @@ def _get_recent_commits_info() -> str:
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        return log if log else "(no commits)"
+        if log:
+            return log
     except Exception:
-        return f"{GIT_COMMIT_SHORT}" if GIT_COMMIT_SHORT != "unknown" else "(git info unavailable)"
+        pass
+    # Fall back to build-time env var (set in Docker)
+    if GIT_RECENT_COMMITS:
+        return GIT_RECENT_COMMITS
+    return f"{GIT_COMMIT_SHORT}" if GIT_COMMIT_SHORT != "unknown" else "(git info unavailable)"
 
 
 def _get_bot_info_text() -> str:
     """Build the bot info message with version and config details."""
-    fallbacks = (
-        ", ".join(OPENROUTER_FALLBACK_MODELS)
-        if OPENROUTER_FALLBACK_MODELS
-        else "(none)"
-    )
+    fallback_models = [OPENROUTER_LLM_VERSION] + (OPENROUTER_FALLBACK_MODELS or [])
+    fallbacks_str = ", ".join(fallback_models)
     commits_info = _get_recent_commits_info()
     return (
         "🤖 <b>Bot Information</b>\n\n"
         f"<b>SERVICE_URL:</b> <code>{SERVICE_URL}</code>\n"
-        f"<b>LLM:</b> <code>{OPENROUTER_LLM_VERSION}</code>\n"
-        f"<b>Fallbacks:</b> <code>{fallbacks}</code>\n\n"
+        f"<b>Local LLM:</b> <code>{LOCAL_LLM_MODEL}</code>\n"
+        f"<b>Cloud fallbacks:</b> <code>{fallbacks_str}</code>\n\n"
         f"<b>Recent commits:</b>\n<pre>{commits_info}</pre>"
     )
 

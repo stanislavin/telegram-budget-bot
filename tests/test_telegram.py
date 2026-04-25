@@ -987,8 +987,8 @@ def test_get_bot_info_text():
 
     assert "Bot Information" in result
     assert "SERVICE_URL" in result
-    assert "LLM" in result
-    assert "Fallbacks" in result
+    assert "Local LLM" in result
+    assert "Cloud fallbacks" in result
     assert "Recent commits" in result
 
 

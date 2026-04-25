@@ -1,5 +1,11 @@
 FROM tailscale/tailscale:latest AS tailscale
 
+# Extract git commit info in a lightweight stage
+FROM alpine/git:latest AS git-info
+WORKDIR /repo
+COPY .git .git
+RUN git log -3 --pretty=format:'%h %s' > /tmp/git_recent_commits 2>/dev/null || echo '' > /tmp/git_recent_commits
+
 FROM python:3.13-slim-bookworm
 
 WORKDIR /app
@@ -17,6 +23,9 @@ COPY bot.py prompt.txt start.sh ./
 RUN chmod +x start.sh
 COPY util/ util/
 COPY web/ web/
+
+# Bake recent commits from git-info stage
+COPY --from=git-info /tmp/git_recent_commits /tmp/git_recent_commits
 
 # The container expects these env vars at runtime:
 #   TELEGRAM_BOT_TOKEN
