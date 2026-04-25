@@ -944,9 +944,17 @@ async def test_button_callback_expired_no_processed_text(mock_update, mock_conte
 
 
 def test_get_recent_commits_info_success():
-    """Test _get_recent_commits_info returns 3 latest commits."""
-    with patch("util.telegram.subprocess.check_output") as mock_check:
-        mock_check.return_value = "abc1234 Fix bug\ndef5678 Add feature\n789abcd Refactor"
+    """Returns 3 commits ending at the deployed SHA via GitHub API."""
+    fake_resp = MagicMock()
+    fake_resp.json.return_value = [
+        {"sha": "abc1234aaaa", "commit": {"message": "Fix bug"}},
+        {"sha": "def5678bbbb", "commit": {"message": "Add feature\nbody"}},
+        {"sha": "789abcdcccc", "commit": {"message": "Refactor"}},
+    ]
+    fake_resp.raise_for_status = MagicMock()
+    with patch("util.telegram._recent_commits_cache", {}), patch(
+        "util.telegram.GIT_COMMIT_SHORT", "abc1234"
+    ), patch("util.telegram.requests.get", return_value=fake_resp):
         result = _get_recent_commits_info()
 
     assert "abc1234 Fix bug" in result
@@ -955,20 +963,22 @@ def test_get_recent_commits_info_success():
 
 
 def test_get_recent_commits_info_error():
-    """Test _get_recent_commits_info fallback on exception."""
-    with patch(
-        "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
-    ), patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
+    """Falls back to bare SHA when GitHub API fails."""
+    with patch("util.telegram._recent_commits_cache", {}), patch(
+        "util.telegram.GIT_COMMIT_SHORT", "abc1234"
+    ), patch("util.telegram.requests.get", side_effect=Exception("network down")):
         result = _get_recent_commits_info()
 
     assert result == "abc1234"
 
 
 def test_get_recent_commits_info_error_unknown():
-    """Test _get_recent_commits_info fallback when git hash is also unavailable."""
-    with patch(
+    """No SHA available and no local git → unavailable message."""
+    with patch("util.telegram._recent_commits_cache", {}), patch(
+        "util.telegram.GIT_COMMIT_SHORT", "unknown"
+    ), patch(
         "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
-    ), patch("util.telegram.GIT_COMMIT_SHORT", "unknown"):
+    ):
         result = _get_recent_commits_info()
 
     assert result == "(git info unavailable)"

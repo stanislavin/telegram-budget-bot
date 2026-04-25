@@ -6,6 +6,7 @@ from asyncio import CancelledError
 import os
 import subprocess
 import random
+import requests
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -31,7 +32,6 @@ from util.config import (
     OPENROUTER_FALLBACK_MODELS,
     SERVICE_URL,
     GIT_COMMIT_SHORT,
-    GIT_RECENT_COMMITS,
     GITHUB_REPO,
     APK_RELEASE_TAG,
 )
@@ -888,22 +888,53 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _schedule_auto_confirm(expense_id, context)
 
 
+_recent_commits_cache: dict[str, str] = {}
+
+
 def _get_recent_commits_info() -> str:
-    """Return a short summary of the 3 latest git commits, or a fallback message."""
+    """Return a short summary of the 3 commits ending at the deployed SHA.
+
+    Fetches from the GitHub API at runtime keyed on GIT_COMMIT_SHORT so the
+    answer always matches the running deployment, no Docker-build cache games.
+    Result is memoized in-process since the deployed SHA is stable per process.
+    """
+    sha = GIT_COMMIT_SHORT
+    if not sha or sha == "unknown":
+        # Last-resort: try local git (useful in dev)
+        try:
+            log = subprocess.check_output(
+                ["git", "log", "-3", "--pretty=format:%h %s"],
+                stderr=subprocess.DEVNULL,
+                text=True,
+            ).strip()
+            if log:
+                return log
+        except Exception:
+            pass
+        return "(git info unavailable)"
+
+    if sha in _recent_commits_cache:
+        return _recent_commits_cache[sha]
+
     try:
-        log = subprocess.check_output(
-            ["git", "log", "-3", "--pretty=format:%h %s"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        if log:
-            return log
-    except Exception:
-        pass
-    # Fall back to build-time env var (set in Docker)
-    if GIT_RECENT_COMMITS:
-        return GIT_RECENT_COMMITS
-    return f"{GIT_COMMIT_SHORT}" if GIT_COMMIT_SHORT != "unknown" else "(git info unavailable)"
+        resp = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/commits",
+            params={"sha": sha, "per_page": 3},
+            timeout=5,
+        )
+        resp.raise_for_status()
+        commits = resp.json()
+        lines = [
+            f"{c['sha'][:7]} {c['commit']['message'].splitlines()[0]}"
+            for c in commits
+        ]
+        result = "\n".join(lines) if lines else sha
+    except Exception as exc:
+        logger.warning("GitHub commits fetch failed: %s", exc)
+        result = sha
+
+    _recent_commits_cache[sha] = result
+    return result
 
 
 def _get_bot_info_text() -> str:

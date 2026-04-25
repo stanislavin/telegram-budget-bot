@@ -61,15 +61,6 @@ if not GIT_COMMIT_SHORT:
         except Exception:
             GIT_COMMIT_SHORT = "unknown"
 
-# Recent commits baked in at Docker build time; falls back to git log at runtime
-GIT_RECENT_COMMITS = os.getenv("GIT_RECENT_COMMITS", "").strip()
-if not GIT_RECENT_COMMITS:
-    try:
-        with open("/tmp/git_recent_commits", "r") as _f:
-            GIT_RECENT_COMMITS = _f.read().strip()
-    except Exception:
-        pass
-
 # Prompt Configuration
 _LLM_PROMPT = None
 
