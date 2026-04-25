@@ -21,6 +21,23 @@
     test_*.py              # pytest suites (unit + integration)
 scripts/
     run_tests_with_coverage.sh   # wrapper for coverage HTML/XML generation
+    build_apk.sh                 # local APK build (auto-detects JDK 17 & Android SDK)
+/android/                        # Android notification capture app (Jetpack Compose + Room)
+    app/src/main/java/com/expensetracker/notif/
+        MainActivity.kt          # entry‑point activity, screen navigation
+        data/
+            AppDatabase.kt       # Room database singleton
+            NotificationEntity.kt
+            NotificationDao.kt
+            AppFilterPrefs.kt    # SharedPreferences for app notification filter
+        service/
+            NotificationCaptureService.kt  # NotificationListenerService impl
+        ui/
+            NotificationsScreen.kt   # main notification list screen
+            SettingsScreen.kt        # app filter settings screen
+            NotificationsViewModel.kt
+            Theme.kt
+    app/build.gradle.kts         # versionCode/versionName live here
 Procfile                    # process declarations for deployment platforms
 .prompt.txt                 # LLM prompt used by the bot
 ```
@@ -38,6 +55,7 @@ Procfile                    # process declarations for deployment platforms
 | **Run coverage** | `make coverage` or `./scripts/run_tests_with_coverage.sh` | Generates `htmlcov/` and `coverage.xml`. |
 | **Lint / type‑check** | `ruff check . && mypy util/ tests/` | Enforces style & static typing (optional). |
 | **Start health only** | `RUN_TELEGRAM_BOT=false python bot.py` | Useful for CI health checks. |
+| **Build APK locally** | `make build-apk` *(or `./scripts/build_apk.sh`)* | Requires JDK 17 + Android SDK. Output: `android/expense-tracker.apk`. |
 
 *All commands assume the virtual environment is active (`source .venv/bin/activate`).*
 
@@ -102,19 +120,29 @@ When a new third‑party library is required:
 
 ---
 
-## 8️⃣ CI Expectations (future proof)
+## 8️⃣ CI & Android Release Pipeline
+
+**Python CI** (future):
 ```yaml
 steps:
-  - name: Install dependencies
-    run: pip install -r requirements.txt -r requirements-test.txt
-  - name: Lint
-    run: ruff check .
-  - name: Test
-    run: make test
-  - name: Coverage
-    run: make coverage
+  - pip install -r requirements.txt -r requirements-test.txt
+  - ruff check .
+  - make test && make coverage
 ```
-Keep CI thin; rely on the repository’s `make` targets.
+
+**Android APK release** (`.github/workflows/android-apk.yml`):
+- **Trigger:** Push to `main` touching `android/` files, or manual `workflow_dispatch`.
+- **Steps:** JDK 17 + Android SDK setup → `./gradlew assembleDebug` → publish to GitHub Releases.
+- **Release tag:** `android-latest` (rolling prerelease, always overwritten).
+- **Asset:** `expense-tracker.apk`.
+
+**Bot APK distribution** (`/app` command in Telegram):
+1. Bot checks for local `android/expense-tracker.apk`.
+2. If missing, fetches from GitHub Releases (`android-latest` tag) via GitHub API.
+3. Downloads APK bytes server-side and sends to user via Telegram.
+- Config: `GITHUB_REPO` and `APK_RELEASE_TAG` env vars in `util/config.py`.
+
+**To release a new Android version:** bump `versionCode`/`versionName` in `android/app/build.gradle.kts`, commit, and push to `main`. The CI will build and publish automatically.
 
 ---
 
