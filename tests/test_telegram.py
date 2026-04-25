@@ -35,7 +35,7 @@ from util.telegram import (
     _category_picker_keyboard,
     _send_filtered_expenses,
     PROCESSED_EXPENSE_TTL_SECONDS,
-    _get_last_commit_info,
+    _get_recent_commits_info,
     _get_bot_info_text,
 )
 from util.message_queue import _chat_queues, _chat_workers
@@ -943,52 +943,36 @@ async def test_button_callback_expired_no_processed_text(mock_update, mock_conte
     )
 
 
-# ---------- _get_last_commit_info ----------
+# ---------- _get_recent_commits_info ----------
 
 
-def test_get_last_commit_info_success():
-    """Test _get_last_commit_info returns commit summary."""
-    with patch("util.telegram.subprocess.check_output") as mock_check, \
-         patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
-        mock_check.side_effect = [
-            "Fix bug",
-            "bot.py\nutil/telegram.py",
-        ]
-        result = _get_last_commit_info()
+def test_get_recent_commits_info_success():
+    """Test _get_recent_commits_info returns 3 latest commits."""
+    with patch("util.telegram.subprocess.check_output") as mock_check:
+        mock_check.return_value = "abc1234 Fix bug\ndef5678 Add feature\n789abcd Refactor"
+        result = _get_recent_commits_info()
 
     assert "abc1234 Fix bug" in result
-    assert "bot.py" in result
+    assert "def5678 Add feature" in result
+    assert "789abcd Refactor" in result
 
 
-def test_get_last_commit_info_no_changed_files():
-    """Test _get_last_commit_info when diff-tree returns no files."""
-    with patch("util.telegram.subprocess.check_output") as mock_check, \
-         patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
-        mock_check.side_effect = [
-            "Fix bug",
-            "",  # no files changed
-        ]
-        result = _get_last_commit_info()
-
-    assert result == "abc1234 Fix bug"
-
-
-def test_get_last_commit_info_error():
-    """Test _get_last_commit_info fallback on exception."""
+def test_get_recent_commits_info_error():
+    """Test _get_recent_commits_info fallback on exception."""
     with patch(
         "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
     ), patch("util.telegram.GIT_COMMIT_SHORT", "abc1234"):
-        result = _get_last_commit_info()
+        result = _get_recent_commits_info()
 
     assert result == "abc1234"
 
 
-def test_get_last_commit_info_error_unknown():
-    """Test _get_last_commit_info fallback when git hash is also unavailable."""
+def test_get_recent_commits_info_error_unknown():
+    """Test _get_recent_commits_info fallback when git hash is also unavailable."""
     with patch(
         "util.telegram.subprocess.check_output", side_effect=Exception("git not found")
     ), patch("util.telegram.GIT_COMMIT_SHORT", "unknown"):
-        result = _get_last_commit_info()
+        result = _get_recent_commits_info()
 
     assert result == "(git info unavailable)"
 
@@ -999,8 +983,8 @@ def test_get_last_commit_info_error_unknown():
 def test_get_bot_info_text():
     """Test _get_bot_info_text builds the info string (lines 549-557)."""
     with patch(
-        "util.telegram._get_last_commit_info",
-        return_value="abc1234 Add feature\nbot.py",
+        "util.telegram._get_recent_commits_info",
+        return_value="abc1234 Add feature\ndef5678 Fix bug\n789abcd Update docs",
     ):
         result = _get_bot_info_text()
 
@@ -1008,7 +992,7 @@ def test_get_bot_info_text():
     assert "SERVICE_URL" in result
     assert "LLM" in result
     assert "Fallbacks" in result
-    assert "Last commit" in result
+    assert "Recent commits" in result
 
 
 # ---------- app_command APK not found ----------

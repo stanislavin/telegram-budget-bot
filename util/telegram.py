@@ -940,21 +940,15 @@ async def _process_expense(update: Update, context: ContextTypes.DEFAULT_TYPE):
     _schedule_auto_confirm(expense_id, context)
 
 
-def _get_last_commit_info() -> str:
-    """Return a short summary of the last git commit, or a fallback message."""
+def _get_recent_commits_info() -> str:
+    """Return a short summary of the 3 latest git commits, or a fallback message."""
     try:
-        subject = subprocess.check_output(
-            ["git", "log", "-1", "--pretty=format:%s"],
+        log = subprocess.check_output(
+            ["git", "log", "-3", "--pretty=format:%h %s"],
             stderr=subprocess.DEVNULL,
             text=True,
         ).strip()
-        files = subprocess.check_output(
-            ["git", "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"],
-            stderr=subprocess.DEVNULL,
-            text=True,
-        ).strip()
-        info = f"{GIT_COMMIT_SHORT} {subject}"
-        return f"{info}\n{files}" if files else info
+        return log if log else "(no commits)"
     except Exception:
         return f"{GIT_COMMIT_SHORT}" if GIT_COMMIT_SHORT != "unknown" else "(git info unavailable)"
 
@@ -966,13 +960,13 @@ def _get_bot_info_text() -> str:
         if OPENROUTER_FALLBACK_MODELS
         else "(none)"
     )
-    commit_info = _get_last_commit_info()
+    commits_info = _get_recent_commits_info()
     return (
         "🤖 <b>Bot Information</b>\n\n"
         f"<b>SERVICE_URL:</b> <code>{SERVICE_URL}</code>\n"
         f"<b>LLM:</b> <code>{OPENROUTER_LLM_VERSION}</code>\n"
         f"<b>Fallbacks:</b> <code>{fallbacks}</code>\n\n"
-        f"<b>Last commit:</b>\n<pre>{commit_info}</pre>"
+        f"<b>Recent commits:</b>\n<pre>{commits_info}</pre>"
     )
 
 
