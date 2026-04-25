@@ -50,6 +50,10 @@ if DATABASE_URL:
         get_daily_stats_pg,
         get_daily_summary_pg,
         get_recent_expenses_pg,
+        upsert_chat_id,
+        get_all_chat_ids,
+        get_last_deployed_commit,
+        set_last_deployed_commit,
     )
 
     _HAS_PG = True
@@ -857,6 +861,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await app_command(update, context)
         return
 
+    # Track chat ID for deploy notifications
+    if _HAS_PG:
+        try:
+            await upsert_chat_id(update.message.chat_id)
+        except Exception as exc:
+            logger.debug("upsert_chat_id failed: %s", exc)
+
     # Enqueue expense for sequential processing per chat
     chat_id = str(update.message.chat_id)
     queued = queue_size(chat_id)
@@ -980,12 +991,43 @@ BOT_COMMANDS = [
 ]
 
 
-async def _register_bot_commands(application: Application) -> None:
-    """Register the command menu shown by Telegram's '/' button."""
+async def _on_post_init(application: Application) -> None:
+    """Register commands and send deploy notification if version changed."""
     try:
         await application.bot.set_my_commands(BOT_COMMANDS)
     except Exception as exc:
         logger.warning("set_my_commands failed: %s", exc)
+
+    await _notify_deploy(application)
+
+
+async def _notify_deploy(application: Application) -> None:
+    """Send a deploy notification to all known chats if the commit changed."""
+    if not _HAS_PG or GIT_COMMIT_SHORT == "unknown":
+        return
+    try:
+        prev_commit = await get_last_deployed_commit()
+        if prev_commit == GIT_COMMIT_SHORT:
+            return  # same version, no notification
+
+        commits_info = _get_recent_commits_info()
+        text = (
+            "🚀 <b>New version deployed!</b>\n\n"
+            f"<b>Recent commits:</b>\n<pre>{commits_info}</pre>"
+        )
+
+        chat_ids = await get_all_chat_ids()
+        for chat_id in chat_ids:
+            try:
+                await application.bot.send_message(
+                    chat_id=chat_id, text=text, parse_mode="HTML"
+                )
+            except Exception as exc:
+                logger.warning("deploy notification to %s failed: %s", chat_id, exc)
+
+        await set_last_deployed_commit(GIT_COMMIT_SHORT)
+    except Exception as exc:
+        logger.warning("deploy notification failed: %s", exc)
 
 
 def create_application():
@@ -993,7 +1035,7 @@ def create_application():
     application = (
         Application.builder()
         .token(TELEGRAM_BOT_TOKEN)
-        .post_init(_register_bot_commands)
+        .post_init(_on_post_init)
         .build()
     )
 

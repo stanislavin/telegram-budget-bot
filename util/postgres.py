@@ -220,6 +220,64 @@ async def get_recent_expenses_pg(days: int = 2, category: str | None = None, spe
         return f"Error fetching recent expenses: {e}"
 
 
+async def upsert_chat_id(chat_id: int) -> None:
+    """Track a chat ID for broadcast messages (e.g. deploy notifications)."""
+    pool = await get_pool()
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS bot_chats (
+               chat_id BIGINT PRIMARY KEY,
+               updated_at TIMESTAMP DEFAULT NOW()
+           )"""
+    )
+    await pool.execute(
+        """INSERT INTO bot_chats (chat_id, updated_at) VALUES ($1, NOW())
+           ON CONFLICT (chat_id) DO UPDATE SET updated_at = NOW()""",
+        chat_id,
+    )
+
+
+async def get_all_chat_ids() -> list[int]:
+    """Return all known chat IDs."""
+    pool = await get_pool()
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS bot_chats (
+               chat_id BIGINT PRIMARY KEY,
+               updated_at TIMESTAMP DEFAULT NOW()
+           )"""
+    )
+    rows = await pool.fetch("SELECT chat_id FROM bot_chats")
+    return [r["chat_id"] for r in rows]
+
+
+async def get_last_deployed_commit() -> str | None:
+    """Return the last deployed commit hash, or None if not stored yet."""
+    pool = await get_pool()
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS bot_meta (
+               key VARCHAR PRIMARY KEY,
+               value VARCHAR NOT NULL
+           )"""
+    )
+    row = await pool.fetchrow("SELECT value FROM bot_meta WHERE key = 'deployed_commit'")
+    return row["value"] if row else None
+
+
+async def set_last_deployed_commit(commit: str) -> None:
+    """Store the current deployed commit hash."""
+    pool = await get_pool()
+    await pool.execute(
+        """CREATE TABLE IF NOT EXISTS bot_meta (
+               key VARCHAR PRIMARY KEY,
+               value VARCHAR NOT NULL
+           )"""
+    )
+    await pool.execute(
+        """INSERT INTO bot_meta (key, value) VALUES ('deployed_commit', $1)
+           ON CONFLICT (key) DO UPDATE SET value = $1""",
+        commit,
+    )
+
+
 async def close_pool():
     """Close the connection pool for graceful shutdown."""
     global _pool
