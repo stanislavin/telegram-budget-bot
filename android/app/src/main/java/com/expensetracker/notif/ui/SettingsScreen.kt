@@ -1,7 +1,7 @@
 package com.expensetracker.notif.ui
 
-import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
+import android.content.pm.LauncherApps
+import android.os.UserManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -41,13 +41,21 @@ private data class AppItem(
 @Composable
 fun SettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val pm = context.packageManager
 
     val apps = remember {
-        pm.getInstalledApplications(PackageManager.GET_META_DATA)
-            .filter { it.flags and ApplicationInfo.FLAG_SYSTEM == 0 }
-            .map { AppItem(it.packageName, pm.getApplicationLabel(it).toString()) }
-            .sortedBy { it.label.lowercase() }
+        val launcherApps = context.getSystemService(LauncherApps::class.java)
+        val userManager = context.getSystemService(UserManager::class.java)
+        val seen = mutableSetOf<String>()
+        val result = mutableListOf<AppItem>()
+        for (profile in userManager.userProfiles) {
+            for (activity in launcherApps.getActivityList(null, profile)) {
+                val pkg = activity.applicationInfo.packageName
+                if (seen.add(pkg)) {
+                    result.add(AppItem(pkg, activity.label.toString()))
+                }
+            }
+        }
+        result.sortedBy { it.label.lowercase() }
     }
 
     var allowed by remember { mutableStateOf(AppFilterPrefs.getAllowed(context)) }
