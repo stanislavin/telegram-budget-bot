@@ -544,7 +544,7 @@ async def test_handle_message_dashboard_button(mock_update, mock_context):
 
 
 @pytest.mark.asyncio
-@patch("util.telegram.DATABASE_URL", None)
+@patch("util.telegram._HAS_PG", False)
 @patch("util.telegram.get_daily_summary", new_callable=AsyncMock)
 async def test_summary_command(mock_get_daily_summary, mock_update, mock_context):
     """Test the /summary command."""
@@ -1051,6 +1051,7 @@ def test_category_picker_keyboard_single_category():
 # ---------- _send_filtered_expenses with filters ----------
 
 
+@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_by_category(mock_message_to_edit):
     """Test _send_filtered_expenses with category filter."""
     with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
@@ -1061,6 +1062,7 @@ async def test_send_filtered_expenses_by_category(mock_message_to_edit):
     mock_message_to_edit.edit_text.assert_called_once()
 
 
+@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_by_spending_type(mock_message_to_edit):
     """Test _send_filtered_expenses with spending_type filter."""
     with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
@@ -1071,6 +1073,7 @@ async def test_send_filtered_expenses_by_spending_type(mock_message_to_edit):
     mock_message_to_edit.edit_text.assert_called_once()
 
 
+@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_both_filters(mock_message_to_edit):
     """Test _send_filtered_expenses with both category and spending_type."""
     with patch("util.telegram.get_recent_expenses", new_callable=AsyncMock) as mock_get:
@@ -1082,6 +1085,7 @@ async def test_send_filtered_expenses_both_filters(mock_message_to_edit):
     mock_get.assert_called_once_with(category="food", spending_type="need")
 
 
+@patch("util.telegram.DATABASE_URL", None)
 async def test_send_filtered_expenses_truncation(mock_message_to_edit):
     """Test _send_filtered_expenses truncates long messages."""
     long_text = "x" * 5000
