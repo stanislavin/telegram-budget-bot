@@ -1,7 +1,7 @@
 package com.expensetracker.notif.service
 
 import android.app.Notification
-import android.content.pm.PackageManager
+import android.content.pm.LauncherApps
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import com.expensetracker.notif.data.AppDatabase
@@ -27,9 +27,12 @@ class NotificationCaptureService : NotificationListenerService() {
         if (!AppFilterPrefs.isAllowed(applicationContext, packageName)) return
 
         val appLabel = runCatching {
-            val pm = packageManager
-            val info = pm.getApplicationInfo(packageName, 0)
-            pm.getApplicationLabel(info).toString()
+            val la = getSystemService(LauncherApps::class.java)
+            val info = la.getApplicationInfo(packageName, 0, sbn.user)
+            packageManager.getApplicationLabel(info).toString()
+        }.recoverCatching {
+            val info = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(info).toString()
         }.getOrNull()
 
         val entity = NotificationEntity(
