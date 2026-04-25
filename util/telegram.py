@@ -805,12 +805,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await app_command(update, context)
         return
 
-    # Track chat ID for deploy notifications
-    try:
-        await upsert_chat_id(update.message.chat_id)
-    except Exception as exc:
-        logger.debug("upsert_chat_id failed: %s", exc)
-
     # Enqueue expense for sequential processing per chat
     chat_id = str(update.message.chat_id)
     queued = queue_size(chat_id)
@@ -983,6 +977,16 @@ def create_application():
         .post_init(_on_post_init)
         .build()
     )
+
+    # Track chat IDs for deploy notifications (runs on every update, group -1)
+    async def _track_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        if update.effective_chat:
+            try:
+                await upsert_chat_id(update.effective_chat.id)
+            except Exception:
+                pass
+
+    application.add_handler(MessageHandler(filters.ALL, _track_chat), group=-1)
 
     # Add handlers
     application.add_handler(CommandHandler("start", start))
