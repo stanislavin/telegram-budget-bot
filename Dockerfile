@@ -1,10 +1,12 @@
 FROM tailscale/tailscale:latest AS tailscale
 
-# Extract git commit info in a lightweight stage
-FROM alpine/git:latest AS git-info
-WORKDIR /repo
-COPY .git .git
-RUN git log -3 --pretty=format:'%h %s' > /tmp/git_recent_commits 2>/dev/null || echo '' > /tmp/git_recent_commits
+# Fetch recent commits via GitHub API (works with shallow clones)
+FROM alpine:latest AS git-info
+RUN apk add --no-cache curl jq
+ARG GITHUB_REPO=stanislavin/telegram-budget-bot
+RUN curl -sf "https://api.github.com/repos/${GITHUB_REPO}/commits?per_page=3" \
+    | jq -r '.[] | "\(.sha[0:7]) \(.commit.message | split("\n")[0])"' \
+    > /tmp/git_recent_commits 2>/dev/null || echo '' > /tmp/git_recent_commits
 
 FROM python:3.13-slim-bookworm
 
