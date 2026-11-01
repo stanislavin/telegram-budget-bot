@@ -198,8 +198,8 @@ def trends():
         currency = request.args.get("currency", "RUB")
         group_by = request.args.get("group_by", "month")
 
-        if group_by not in ("month", "week"):
-            return jsonify({"error": "group_by must be 'month' or 'week'"}), 400
+        if group_by not in ("month", "week", "day"):
+            return jsonify({"error": "group_by must be 'month', 'week' or 'day'"}), 400
 
         if not date_from or not date_to:
             return jsonify({"error": "'from' and 'to' are required"}), 400

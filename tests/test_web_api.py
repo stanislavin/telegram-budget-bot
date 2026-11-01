@@ -210,10 +210,19 @@ class TestTrends:
         assert response.status_code == 400
         assert "YYYY-MM-DD" in json.loads(response.data)["error"]
 
+    def test_day_group_by(self, client):
+        test_client, mock_pool = client
+        mock_pool.fetch = MagicMock(return_value=[])
+        response = test_client.get(
+            "/api/trends?from=2025-01-01&to=2025-02-01&currency=RUB&group_by=day"
+        )
+        assert response.status_code == 200
+        assert json.loads(response.data) == []
+
     def test_invalid_group_by_returns_400(self, client):
         test_client, _ = client
         response = test_client.get(
-            "/api/trends?from=2025-01-01&to=2025-07-01&group_by=day"
+            "/api/trends?from=2025-01-01&to=2025-07-01&group_by=hour"
         )
         assert response.status_code == 400
         assert "group_by" in json.loads(response.data)["error"]
