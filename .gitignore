@@ -177,3 +177,4 @@ android/app/build/
 android/local.properties
 android/*.apk
 android/captures/
+.DS_Store
