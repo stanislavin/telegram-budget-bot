@@ -2,14 +2,18 @@ import asyncio
 import calendar
 import hashlib
 import logging
+import os
 import random
 from datetime import datetime
+from pathlib import Path
 from threading import Thread
+from urllib.parse import unquote
 
 import asyncpg
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, send_from_directory
 
 from util.config import DATABASE_URL, GIT_COMMIT_SHORT
+from util.telegram_auth import parse_init_user, validate_init_data
 from util.openrouter import _call_chat_completion, _build_provider_chain, _build_provider_chain_dynamic
 from util.postgres import _clean_dsn
 from util.llm_settings import (
@@ -71,6 +75,95 @@ async def _get_web_pool():
 def _run(coro):
     """Submit a coroutine to the persistent loop and wait for the result."""
     return asyncio.run_coroutine_threadsafe(coro, _loop).result()
+
+
+# ---------------------------------------------------------------------------
+# Telegram Mini App (charts page)
+# ---------------------------------------------------------------------------
+
+# Read-only endpoints the Mini App is allowed to call. Everything else
+# (CRUD, LLM settings, /api/analyze) stays off-limits for Mini App traffic.
+# Flask prefixes blueprint endpoint names with "<blueprint>.".
+_MINI_APP_ALLOWED_ENDPOINTS = {
+    "api.trends", "api.budget", "api.categories", "api.monthly_expenses",
+}
+
+_WEB_DIR = str(Path(__file__).resolve().parent)
+
+# User ids explicitly allowed to open the Mini App (comma-separated TELEGRAM_USER_IDS).
+# When the list is empty, the first user to open the app claims the lock.
+_MINI_APP_OWNER_CACHE: set = set()
+
+
+def _allowed_user_ids() -> set:
+    raw = os.getenv("TELEGRAM_USER_IDS", "")
+    ids = set()
+    for part in raw.replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+def mini_app_user_id() -> int | None:
+    """Telegram user id from validated initData, else None.
+
+    The raw query string is taken from the X-Telegram-Init-Data header (sent
+    by charts.html on every fetch) or the ?init_data= query param (used when
+    the page itself is opened).
+    """
+    raw = request.headers.get("X-Telegram-Init-Data") or request.args.get("init_data", "")
+    if raw:
+        # Parse once: Telegram percent-decodes initData when it injects it into
+        # the URL, so a raw-quoted string can be double-encoded. Accept either.
+        candidates = (raw, unquote(raw)) if "%" in raw else (raw,)
+        for cand in candidates:
+            if validate_init_data(cand):
+                return parse_init_user(cand)
+    return None
+
+
+def mini_app_denied(user_id: int | None) -> bool:
+    """True when this user may not see budget data in the Mini App."""
+    if user_id is None:
+        return True
+    allowed = _allowed_user_ids()
+    if allowed:
+        return user_id not in allowed
+    if not _MINI_APP_OWNER_CACHE:
+        # First validated user claims ownership (single-user bot).
+        _MINI_APP_OWNER_CACHE.add(user_id)
+        logger.info(f"Mini App owner locked to user {user_id}")
+        return False
+    return user_id not in _MINI_APP_OWNER_CACHE
+
+
+@api_bp.route("/charts")
+def charts_page():
+    """Serve the Mini App page; requires valid initData (or dev mode)."""
+    from util.telegram_auth import INSECURE_SKIP_VALIDATION
+    raw = request.args.get("init_data", "")
+    if INSECURE_SKIP_VALIDATION and request.args.get("dev") == "1":
+        return send_from_directory(_WEB_DIR, "charts.html")
+    if mini_app_denied(mini_app_user_id()):
+        return send_from_directory(_WEB_DIR, "charts.html"), 401
+    return send_from_directory(_WEB_DIR, "charts.html")
+
+
+@api_bp.before_request
+def _mini_app_gate():
+    """For Mini App traffic (requests carrying Telegram initData), only allow
+    the read-only chart endpoints and only for the owner. Requests without
+    initData keep their existing behavior (desktop dashboard, no auth)."""
+    raw = request.headers.get("X-Telegram-Init-Data")
+    if not raw:
+        return None
+    endpoint = request.endpoint or ""
+    if endpoint not in _MINI_APP_ALLOWED_ENDPOINTS:
+        return jsonify({"error": "Forbidden for Mini App"}), 403
+    if mini_app_denied(mini_app_user_id()):
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
 
 
 @api_bp.route("/api/version")

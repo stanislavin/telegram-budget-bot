@@ -14,6 +14,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     BotCommand,
+    WebAppInfo,
 )
 from telegram.ext import (
     Application,
@@ -128,6 +129,13 @@ def get_full_command_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
+def _charts_button(text: str = "📊 Мои траты — графики") -> InlineKeyboardMarkup:
+    """Inline keyboard with a single Mini App button opening /charts."""
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(text, web_app=WebAppInfo(url=f"{SERVICE_URL}/charts"))
+    ]])
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send a message when the command /start is issued."""
     await update.message.reply_text(
@@ -135,6 +143,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "amount currency category description\n"
         "Example: 25.50 USD food groceries",
         reply_markup=get_command_keyboard(),
+    )
+    await update.message.reply_text(
+        "📊 Графики твоих трат — прямо здесь, в Telegram:",
+        reply_markup=_charts_button(),
     )
 
 
@@ -216,10 +228,21 @@ async def app_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def charts_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send the Mini App button for spending charts."""
+    await update.message.reply_text(
+        "Нажми кнопку — графики откроются внутри Telegram:",
+        reply_markup=_charts_button(),
+    )
+
+
 async def dashboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send the service URL link."""
+    """Send the service URL link and the Mini App charts button."""
     await update.message.reply_text(
         f"🌐 <b>Service URL:</b>\n<code>{SERVICE_URL}</code>", parse_mode="HTML"
+    )
+    await update.message.reply_text(
+        "📊 Быстрый доступ к графикам:", reply_markup=_charts_button()
     )
 
 
@@ -1026,6 +1049,7 @@ def create_application():
     application.add_handler(CommandHandler("undo", undo_command))
     application.add_handler(CommandHandler("app", app_command))
     application.add_handler(CommandHandler("dashboard", dashboard_command))
+    application.add_handler(CommandHandler("charts", charts_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
