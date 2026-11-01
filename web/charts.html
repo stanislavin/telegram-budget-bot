@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Графики трат</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<style>
+  :root {
+    --bg: var(--tg-bg, #f5f6fa);
+    --card: var(--tg-card, #ffffff);
+    --text: var(--tg-text, #1f2430);
+    --muted: var(--tg-muted, #7b8190);
+    --accent: #4f46e5;
+    --border: var(--tg-border, rgba(0,0,0,.08));
+    --danger: #ef4444;
+    --ok: #16a34a;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not(.light) {
+      --bg: #10131a; --card: #191d26; --text: #e8eaf0;
+      --muted: #8b93a5; --border: rgba(255,255,255,.1);
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 12px 12px calc(24px + env(safe-area-inset-bottom));
+  }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 16px; padding: 14px; margin-bottom: 12px;
+  }
+  .seg { display: flex; gap: 6px; margin-bottom: 12px; }
+  .seg button {
+    flex: 1; padding: 8px 0; border-radius: 10px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-size: 14px; font-weight: 600;
+  }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .sums { display: flex; gap: 8px; margin-bottom: 12px; }
+  .sum { flex: 1; text-align: center; }
+  .sum .v { font-size: 17px; font-weight: 700; }
+  .sum .l { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sum.neg .v { color: var(--danger); }
+  .sum.pos .v { color: var(--ok); }
+  .bar { height: 8px; border-radius: 4px; background: var(--border); overflow: hidden; margin: 6px 0 4px; }
+  .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+  .bar i.over { background: var(--danger); }
+  .row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); }
+  h2 { font-size: 13px; margin: 0 0 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  select {
+    width: 100%; padding: 9px 10px; border-radius: 10px; border: 1px solid var(--border);
+    background: var(--bg); color: var(--text); font-size: 15px; margin-bottom: 10px;
+  }
+  .chart-wrap { position: relative; height: 240px; }
+  .err { color: var(--danger); font-size: 14px; }
+  .cat-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .cat-row:last-child { border-bottom: none; }
+  .cat-name { flex: 1; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cat-amt { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 14px; }
+  .cat-pct { font-size: 12px; color: var(--muted); width: 42px; text-align: right; }
+  .hidden { display: none !important; }
+  .skeleton { color: var(--muted); font-size: 14px; padding: 20px 0; text-align: center; }
+  .denied { text-align: center; padding: 40px 16px; }
+  .denied .big { font-size: 40px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+<div id="denied" class="card denied hidden">
+  <div class="big">🔒</div>
+  <div>Страница открывается только из бота.</div>
+</div>
+
+<div id="app" class="hidden">
+  <div class="card">
+    <div class="seg" id="viewSeg">
+      <button data-view="month" class="on">За месяц</button>
+      <button data-view="trend">Динамика</button>
+    </div>
+    <div id="monthControls">
+      <select id="monthSel"></select>
+      <div class="sums">
+        <div class="sum"><div class="v" id="sSpent">—</div><div class="l">Потрачено</div></div>
+        <div class="sum" id="sPlanWrap"><div class="v" id="sPlan">—</div><div class="l">План</div></div>
+        <div class="sum" id="sDeltaWrap"><div class="v" id="sDelta">—</div><div class="l">Разница</div></div>
+      </div>
+      <div id="budgetBarWrap">
+        <div class="bar"><i id="budgetBar"></i></div>
+        <div class="row"><span id="budgetPct">—</span><span id="budgetTotal">—</span></div>
+      </div>
+    </div>
+    <div id="trendControls" class="hidden">
+      <div class="seg">
+        <button data-gran="week">Недели</button>
+        <button data-gran="month" class="on">Месяцы</button>
+      </div>
+      <select id="monthsSel">
+        <option value="3">3 месяца</option>
+        <option value="6" selected>6 месяцев</option>
+        <option value="12">12 месяцев</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 id="chartTitle">По категориям</h2>
+    <div class="chart-wrap"><canvas id="chart"></canvas></div>
+    <div id="chartErr" class="err hidden"></div>
+  </div>
+
+  <div class="card">
+    <h2>Топ категорий</h2>
+    <div id="catList"><div class="skeleton">Загрузка…</div></div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram && window.Telegram.WebApp;
+const COLORS = ['#4f46e5','#f59e0b','#10b981','#ef4444','#3b82f6','#8b5cf6','#ec4899','#14b8a6','#f97316','#64748b','#84cc16','#06b6d4'];
+const MONTHS_RU = ['январь','февраль','март','апрель','май','июнь','июль','август','сентябрь','октябрь','ноябрь','декабрь'];
+const state = { view: 'month', gran: 'month', split: false, month: null, months: 6 };
+let chart = null;
+
+function initTheme() {
+  if (!tg) return;
+  try { tg.ready(); tg.expand(); } catch (e) {}
+  const th = tg.colorScheme || (tg.themeParams && tg.themeParams.color_scheme);
+  if (th === 'light') document.documentElement.classList.add('light');
+  const p = tg.themeParams || {};
+  const set = (k, v) => { if (v) document.documentElement.style.setProperty(k, v); };
+  set('--tg-bg', p.bg_color); set('--tg-card', p.secondary_bg_color);
+  set('--tg-text', p.text_color); set('--tg-muted', p.hint_color);
+  set('--tg-border', p.hint_color ? p.hint_color + '40' : null);
+  try { tg.setHeaderColor && tg.setHeaderColor(p.bg_color || '#f5f6fa'); } catch (e) {}
+  try { tg.setBackgroundColor && tg.setBackgroundColor(p.secondary_bg_color || '#f5f6fa'); } catch (e) {}
+}
+
+function haptic(type) {
+  try { tg && tg.HapticFeedback && tg.HapticFeedback.impactOccurred(type || 'light'); } catch (e) {}
+}
+
+function fmt(n, cur) {
+  const v = Number(n || 0).toLocaleString('ru-RU', { maximumFractionDigits: 0 });
+  return v + ' ' + (cur || '₽');
+}
+
+function hapticOnError() { try { tg && tg.HapticFeedback && tg.HapticFeedback.notificationOccurred('error'); } catch (e) {} }
+
+// ---- Month selector ----
+function buildMonthSelect() {
+  const sel = document.getElementById('monthSel');
+  const now = new Date();
+  for (let i = 0; i < 12; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const val = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    const o = document.createElement('option');
+    o.value = val;
+    o.textContent = MONTHS_RU[d.getMonth()] + ' ' + d.getFullYear();
+    sel.appendChild(o);
+  }
+  state.month = sel.value;
+  sel.onchange = () => { state.month = sel.value; load(); haptic(); };
+}
+
+// ---- Data loading ----
+async function api(path) {
+  const r = await fetch(path, { headers: { 'X-Telegram-Init-Data': tg && tg.initData || '' } });
+  if (r.status === 401) { showDenied(); throw new Error('unauthorized'); }
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+function showDenied() {
+  document.getElementById('app').classList.add('hidden');
+  document.getElementById('denied').classList.remove('hidden');
+}
+
+async function load() {
+  document.getElementById('chartErr').classList.add('hidden');
+  try {
+    if (state.view === 'month') await loadMonth();
+    else await loadTrend();
+  } catch (e) {
+    if (String(e.message) === 'unauthorized') return;
+    const el = document.getElementById('chartErr');
+    el.textContent = 'Не удалось загрузить данные: ' + e.message;
+    el.classList.remove('hidden');
+    hapticOnError();
+  }
+}
+
+async function loadMonth() {
+  const [y, m] = state.month.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const [catRes, bud] = await Promise.all([
+    api(`/api/trends?from=${state.month}-01&to=${state.month}-${String(last).padStart(2,'0')}&group_by=day&split=true&currency=RUB`),
+    api(`/api/budget?month=${state.month}&currency=RUB`).catch(() => ({})),
+  ]);
+  renderCategoryChart(catRes);
+  renderBudget(bud);
+  renderTopCats(catRes, totalOf(catRes));
+}
+
+function totalOf(rows) {
+  return (rows || []).reduce((s, r) => s + Number(r.total || 0), 0);
+}
+
+function renderBudget(bud) {
+  const spent = Number(bud.total_spent || 0);
+  const plan = Number(bud.planned_total || 0);
+  const cur = bud.currency || '₽';
+  document.getElementById('sSpent').textContent = fmt(spent, cur);
+  const planWrap = document.getElementById('sPlanWrap');
+  const deltaWrap = document.getElementById('sDeltaWrap');
+  const barWrap = document.getElementById('budgetBarWrap');
+  if (!plan) {
+    planWrap.classList.add('hidden'); deltaWrap.classList.add('hidden'); barWrap.classList.add('hidden');
+    return;
+  }
+  planWrap.classList.remove('hidden'); deltaWrap.classList.remove('hidden'); barWrap.classList.remove('hidden');
+  document.getElementById('sPlan').textContent = fmt(plan, cur);
+  const delta = plan - spent;
+  const d = document.getElementById('sDelta');
+  d.textContent = (delta >= 0 ? '+' : '−') + fmt(Math.abs(delta), cur);
+  d.parentElement.className = 'sum ' + (delta >= 0 ? 'pos' : 'neg');
+  const pct = Math.min(100, plan ? Math.round(spent / plan * 100) : 0);
+  const bar = document.getElementById('budgetBar');
+  bar.style.width = pct + '%';
+  bar.className = spent > plan ? 'over' : '';
+  document.getElementById('budgetPct').textContent = pct + '% бюджета';
+  document.getElementById('budgetTotal').textContent = fmt(spent, cur) + ' / ' + fmt(plan, cur);
+}
+
+function renderCategoryChart(rows) {
+  const byCat = {};
+  (rows || []).forEach(r => { byCat[r.category] = (byCat[r.category] || 0) + Number(r.total || 0); });
+  const entries = Object.entries(byCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]);
+  document.getElementById('chartTitle').textContent = 'По категориям';
+  destroyChart();
+  chart = new Chart(document.getElementById('chart'), {
+    type: 'doughnut',
+    data: {
+      labels: entries.map(e => e[0]),
+      datasets: [{ data: entries.map(e => e[1]), backgroundColor: entries.map((_, i) => COLORS[i % COLORS.length]), borderWidth: 0 }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '58%',
+      plugins: {
+        legend: { position: 'bottom', labels: { boxWidth: 10, color: cssVar('--text') } },
+        tooltip: { callbacks: { label: c => ' ' + c.label + ': ' + fmt(c.parsed) } },
+      },
+    },
+  });
+}
+
+function renderTopCats(rows, total) {
+  const byCat = {};
+  (rows || []).forEach(r => { byCat[r.category] = (byCat[r.category] || 0) + Number(r.total || 0); });
+  const entries = Object.entries(byCat).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1]).slice(0, 10);
+  const el = document.getElementById('catList');
+  if (!entries.length) { el.innerHTML = '<div class="skeleton">Нет трат за этот период</div>'; return; }
+  el.innerHTML = entries.map(([cat, amt], i) => `
+    <div class="cat-row">
+      <span class="cat-name">${escapeHtml(cat)}</span>
+      <span class="cat-amt">${fmt(amt)}</span>
+      <span class="cat-pct">${total ? Math.round(amt / total * 100) : 0}%</span>
+    </div>`).join('');
+}
+
+async function loadTrend() {
+  const now = new Date();
+  const from = new Date(now.getFullYear(), now.getMonth() - state.months + 1, 1);
+  const start = from.getFullYear() + '-' + String(from.getMonth() + 1).padStart(2, '0') + '-01';
+  const params = new URLSearchParams({
+    from: start,
+    to: now.toISOString().slice(0, 10),
+    group_by: state.gran === 'day' ? 'week' : state.gran,  // API supports month|week
+    currency: 'RUB',
+  });
+  if (state.split) params.set('split', 'true');
+  const rows = await api('/api/trends?' + params);
+  renderTrendChart(rows);
+  renderTopCats(rows, totalOf(rows));
+}
+
+function renderTrendChart(rows) {
+  destroyChart();
+  const cur = '₽';
+  const ctx = document.getElementById('chart');
+  const common = {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: state.split, position: 'bottom', labels: { boxWidth: 10, color: cssVar('--text') } } },
+  };
+  if (state.split) {
+    const byCat = {}; const periods = new Set();
+    rows.forEach(d => { periods.add(d.period); (byCat[d.category] = byCat[d.category] || {})[d.period] = (byCat[d.category][d.period] || 0) + Number(d.total || 0); });
+    const ps = [...periods].sort();
+    const cats = Object.keys(byCat).sort();
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: ps, datasets: cats.map((c, i) => ({
+        label: c, data: ps.map(p => byCat[c][p] || 0),
+        borderColor: COLORS[i % COLORS.length], backgroundColor: COLORS[i % COLORS.length] + '1a',
+        fill: false, tension: 0.3, pointRadius: 2, borderWidth: 2,
+      })) },
+      options: { ...common, scales: lineScales(cur) },
+    });
+  } else {
+    const agg = {};
+    rows.forEach(d => { agg[d.period] = (agg[d.period] || 0) + Number(d.total || 0); });
+    const ps = Object.keys(agg).sort();
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: { labels: ps, datasets: [{
+        data: ps.map(p => agg[p]), borderColor: '#4f46e5',
+        backgroundColor: 'rgba(79,70,229,.12)', fill: true, tension: 0.3, pointRadius: 3,
+      }] },
+      options: {
+        ...common,
+        scales: lineScales(cur),
+        plugins: { ...common.plugins, tooltip: { callbacks: { label: c => ' ' + fmt(c.parsed.y) } } },
+      },
+    });
+  }
+  document.getElementById('chartTitle').textContent =
+    state.split ? 'По категориям' : 'Динамика трат';
+}
+
+function lineScales(cur) {
+  return {
+    x: { ticks: { color: cssVar('--muted'), maxRotation: 0, autoSkip: true, maxTicksLimit: 8 }, grid: { color: cssVar('--border') } },
+    y: { beginAtZero: true, ticks: { color: cssVar('--muted'), callback: v => Number(v).toLocaleString('ru-RU') }, grid: { color: cssVar('--border') } },
+  };
+}
+
+function destroyChart() { if (chart) { chart.destroy(); chart = null; } }
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || '#888'; }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// ---- Controls ----
+function wire() {
+  document.getElementById('viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    state.view = b.dataset.view;
+    [...e.currentTarget.children].forEach(x => x.classList.toggle('on', x === b));
+    document.getElementById('monthControls').classList.toggle('hidden', state.view !== 'month');
+    document.getElementById('trendControls').classList.toggle('hidden', state.view !== 'trend');
+    load(); haptic();
+  });
+  document.querySelectorAll('#trendControls .seg button').forEach(b => {
+    b.addEventListener('click', () => {
+      state.gran = b.dataset.gran;
+      [...b.parentElement.children].forEach(x => x.classList.toggle('on', x === b));
+      state.split = false;
+      load(); haptic();
+    });
+  });
+  document.getElementById('monthsSel').onchange = e => { state.months = Number(e.target.value); load(); haptic(); };
+}
+
+initTheme();
+if (tg && tg.initData) {
+  document.getElementById('app').classList.remove('hidden');
+  buildMonthSelect();
+  wire();
+  load();
+} else if (location.search.includes('dev=1')) {
+  document.getElementById('app').classList.remove('hidden');
+  buildMonthSelect(); wire(); load();
+} else {
+  showDenied();
+}
+</script>
+</body>
+</html>

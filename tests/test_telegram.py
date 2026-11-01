@@ -119,10 +119,13 @@ def mock_message_to_edit():
 async def test_start_command(mock_update, mock_context):
     """Test the /start command."""
     await start(mock_update, mock_context)
-    mock_update.message.reply_text.assert_called_once()
-    args, kwargs = mock_update.message.reply_text.call_args
+    # First message: welcome text; second: Mini App charts button
+    assert mock_update.message.reply_text.call_count == 2
+    args, kwargs = mock_update.message.reply_text.call_args_list[0]
     assert "Hi! I'm your budget tracking bot." in args[0]
     assert isinstance(kwargs["reply_markup"], ReplyKeyboardMarkup)
+    args2, kwargs2 = mock_update.message.reply_text.call_args_list[1]
+    assert isinstance(kwargs2["reply_markup"], InlineKeyboardMarkup)
 
 
 @pytest.mark.asyncio
@@ -535,9 +538,9 @@ async def test_handle_message_dashboard_button(mock_update, mock_context):
 
     await handle_message(mock_update, mock_context)
 
-    # Should call dashboard_command, not process_with_openrouter
-    mock_update.message.reply_text.assert_called_once()
-    args, kwargs = mock_update.message.reply_text.call_args
+    # Should call dashboard_command (URL + charts button), not process_with_openrouter
+    assert mock_update.message.reply_text.call_count == 2
+    args, kwargs = mock_update.message.reply_text.call_args_list[0]
     assert "Service URL" in args[0]
     assert isinstance(kwargs.get("parse_mode"), str)
 
